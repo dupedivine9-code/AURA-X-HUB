@@ -9,17 +9,17 @@ local GuiService = game:GetService("GuiService")
 local player = Players.LocalPlayer
 
 local C = {
-    gold = Color3.fromRGB(239,190,78),
-    gold2 = Color3.fromRGB(151,105,38),
-    bg = Color3.fromRGB(10,10,13),
-    header = Color3.fromRGB(15,14,13),
-    panel = Color3.fromRGB(20,20,24),
-    row = Color3.fromRGB(25,25,30),
-    rowHover = Color3.fromRGB(34,31,26),
-    text = Color3.fromRGB(244,240,230),
-    muted = Color3.fromRGB(160,154,143),
-    off = Color3.fromRGB(48,43,34),
-    on = Color3.fromRGB(91,67,29)
+    gold = Color3.fromRGB(246,198,91),
+    gold2 = Color3.fromRGB(167,119,43),
+    bg = Color3.fromRGB(8,9,12),
+    header = Color3.fromRGB(16,15,14),
+    panel = Color3.fromRGB(22,22,27),
+    row = Color3.fromRGB(22,23,28),
+    rowHover = Color3.fromRGB(31,29,25),
+    text = Color3.fromRGB(247,244,236),
+    muted = Color3.fromRGB(153,153,157),
+    off = Color3.fromRGB(37,38,43),
+    on = Color3.fromRGB(77,58,27)
 }
 local function make(class, props, parent)
     local o=Instance.new(class)
@@ -66,15 +66,32 @@ function AuraUI:CreateWindow(options)
     scale=math.max(.68,scale)
     local main=make("Frame",{Name="Main",AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),
         Size=UDim2.fromOffset(590,540),BackgroundColor3=C.bg,BorderSizePixel=0,ClipsDescendants=true},gui)
-    round(main,15); outline(main,C.gold,1.5,.08)
+    round(main,17); outline(main,C.gold,1.35,.12)
     make("UIScale",{Scale=scale},main)
+    make("UIGradient",{Rotation=135,Color=ColorSequence.new({
+        ColorSequenceKeypoint.new(0,Color3.fromRGB(13,14,18)),
+        ColorSequenceKeypoint.new(1,Color3.fromRGB(7,8,11))
+    })},main)
+    local topAccent=make("Frame",{Name="GoldAccent",Size=UDim2.new(1,0,0,3),
+        BackgroundColor3=C.gold,BorderSizePixel=0,ZIndex=5},main)
+    make("UIGradient",{Rotation=0,Color=ColorSequence.new({
+        ColorSequenceKeypoint.new(0,Color3.fromRGB(112,75,25)),
+        ColorSequenceKeypoint.new(.48,Color3.fromRGB(255,218,125)),
+        ColorSequenceKeypoint.new(1,Color3.fromRGB(112,75,25))
+    })},topAccent)
 
-    local header=make("Frame",{Name="Header",Size=UDim2.new(1,0,0,82),BackgroundColor3=C.header,
-        BorderSizePixel=0},main)
+    local header=make("Frame",{Name="Header",Position=UDim2.fromOffset(0,3),
+        Size=UDim2.new(1,0,0,82),BackgroundColor3=C.header,BorderSizePixel=0},main)
+    make("UIGradient",{Rotation=0,Color=ColorSequence.new(Color3.fromRGB(24,22,18),Color3.fromRGB(13,13,15))},header)
     local title=text(header,options.Title or "AURA X HUB",22,C.gold,Enum.Font.GothamBlack)
-    title.Position=UDim2.fromOffset(22,10); title.Size=UDim2.new(1,-44,0,32)
-    local sub=text(header,options.SubTitle or "PREMIUM EDITION",12,C.muted,Enum.Font.GothamMedium)
-    sub.Position=UDim2.fromOffset(23,43); sub.Size=UDim2.new(1,-46,0,22)
+    title.Position=UDim2.fromOffset(23,9); title.Size=UDim2.new(1,-46,0,34)
+    local sub=text(header,options.SubTitle or "PREMIUM EDITION",11,C.muted,Enum.Font.GothamMedium)
+    sub.Position=UDim2.fromOffset(24,45); sub.Size=UDim2.new(1,-48,0,20)
+    local edition=make("TextLabel",{AnchorPoint=Vector2.new(1,.5),Position=UDim2.new(1,-22,.5,5),
+        Size=UDim2.fromOffset(90,25),BackgroundColor3=Color3.fromRGB(43,34,20),
+        Text="●  ELITE",TextColor3=C.gold,TextSize=10,Font=Enum.Font.GothamBold,
+        BorderSizePixel=0},header)
+    round(edition,8); outline(edition,C.gold2,1,.45)
     make("Frame",{Position=UDim2.new(0,20,1,-1),Size=UDim2.new(1,-40,0,1),
         BackgroundColor3=C.gold2,BackgroundTransparency=.45,BorderSizePixel=0},header)
 
@@ -95,6 +112,7 @@ function AuraUI:CreateWindow(options)
             t.Frame.Visible=(i==index)
             t.Button.BackgroundColor3=(i==index) and Color3.fromRGB(76,56,25) or C.panel
             t.Button.TextColor3=(i==index) and C.gold or C.muted
+            t.ActiveLine.Visible=(i==index)
             if i==index then t.Frame.CanvasPosition=Vector2.zero end
         end
     end
@@ -129,10 +147,14 @@ function AuraUI:CreateWindow(options)
             PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,8)},frame)
         local layout=make("UIListLayout",{Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder},frame)
         local tabBtn=make("TextButton",{Text=tostring(tabOptions.Title or "Tab"),AutoButtonColor=false,
-            TextColor3=C.muted,TextSize=14,Font=Enum.Font.GothamBold,BackgroundColor3=C.panel,
+            TextColor3=C.muted,TextSize=13,Font=Enum.Font.GothamBold,BackgroundColor3=C.panel,
             BorderSizePixel=0,Size=UDim2.new(1/4,-7,1,0)},tabsBar)
-        round(tabBtn,10)
-        local tab={Frame=frame,Button=tabBtn}
+        round(tabBtn,9)
+        local activeLine=make("Frame",{AnchorPoint=Vector2.new(.5,1),Position=UDim2.new(.5,0,1,-3),
+            Size=UDim2.new(.38,0,0,2),BackgroundColor3=C.gold,BorderSizePixel=0,
+            Visible=false},tabBtn)
+        round(activeLine,2)
+        local tab={Frame=frame,Button=tabBtn,ActiveLine=activeLine}
         table.insert(self.Tabs,tab)
         tabBtn.MouseButton1Click:Connect(function() self:SelectTab(table.find(self.Tabs,tab)) end)
 
@@ -140,8 +162,18 @@ function AuraUI:CreateWindow(options)
             local r=make("Frame",{Size=UDim2.new(1,-4,0,height or 52),BackgroundColor3=C.row,
                 BorderSizePixel=0,ClipsDescendants=false},frame)
             round(r,10)
-            r.MouseEnter:Connect(function() tween(r,{BackgroundColor3=C.rowHover}) end)
-            r.MouseLeave:Connect(function() tween(r,{BackgroundColor3=C.row}) end)
+            make("UIStroke",{Color=Color3.fromRGB(55,53,47),Thickness=1,Transparency=.72},r)
+            local accent=make("Frame",{Position=UDim2.fromOffset(0,12),Size=UDim2.new(0,2,1,-24),
+                BackgroundColor3=C.gold2,BackgroundTransparency=.48,BorderSizePixel=0},r)
+            round(accent,2)
+            r.MouseEnter:Connect(function()
+                tween(r,{BackgroundColor3=C.rowHover})
+                tween(accent,{BackgroundTransparency=0})
+            end)
+            r.MouseLeave:Connect(function()
+                tween(r,{BackgroundColor3=C.row})
+                tween(accent,{BackgroundTransparency=.48})
+            end)
             return r
         end
         local function rowLabel(r,value)
@@ -151,10 +183,12 @@ function AuraUI:CreateWindow(options)
         end
         function tab:AddSection(name)
             local r=make("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1},frame)
-            local l=text(r,string.upper(name),12,C.gold,Enum.Font.GothamBold)
-            l.Position=UDim2.fromOffset(7,0); l.Size=UDim2.new(1,-14,1,-4)
-            make("Frame",{Position=UDim2.new(0,7,1,-1),Size=UDim2.new(1,-14,0,1),
-                BackgroundColor3=C.gold2,BackgroundTransparency=.25,BorderSizePixel=0},r)
+            local dot=make("Frame",{Position=UDim2.fromOffset(7,10),Size=UDim2.fromOffset(5,5),
+                BackgroundColor3=C.gold,BorderSizePixel=0},r); round(dot,3)
+            local l=text(r,string.upper(name),11,C.gold,Enum.Font.GothamBold)
+            l.Position=UDim2.fromOffset(20,0); l.Size=UDim2.new(1,-27,1,-4)
+            make("Frame",{Position=UDim2.new(0,20,1,-1),Size=UDim2.new(1,-27,0,1),
+                BackgroundColor3=C.gold2,BackgroundTransparency=.48,BorderSizePixel=0},r)
         end
         function tab:AddToggle(id,cfg)
             cfg=cfg or {}; local r=row(50); rowLabel(r,cfg.Title or id)
