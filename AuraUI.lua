@@ -54,25 +54,25 @@ end
 function AuraUI:CreateWindow(options)
     options=options or {}
     local pg=player:WaitForChild("PlayerGui")
+    -- Remove every previous copy from either parent before creating a fresh menu.
+    pcall(function()
+        local cg=game:GetService("CoreGui")
+        local previous=cg:FindFirstChild("AuraUI_Premium")
+        if previous then previous:Destroy() end
+    end)
+    local previousPlayerGui=pg:FindFirstChild("AuraUI_Premium")
+    if previousPlayerGui then previousPlayerGui:Destroy() end
     local gui=make("ScreenGui",{Name="AuraUI_Premium",ResetOnSpawn=false,IgnoreGuiInset=true,
         ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=9999},nil)
     local ok=pcall(function() gui.Parent=game:GetService("CoreGui") end)
     if not ok or not gui.Parent then gui.Parent=pg end
-    if pg:FindFirstChild("AuraUI_Premium") then pg.AuraUI_Premium:Destroy() end
     self.GUI=gui
 
     local viewport=workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(900,700)
     local scale=math.min(1,viewport.X/650,viewport.Y/610)
     scale=math.max(.68,scale)
     -- Ambient black/gold backdrop and layered glow, kept behind the actual menu.
-    local shade=make("Frame",{Name="AuraBackdrop",Size=UDim2.fromScale(1,1),
-        BackgroundColor3=Color3.fromRGB(2,3,7),BackgroundTransparency=.28,
-        BorderSizePixel=0,ZIndex=0},gui)
-    make("UIGradient",{Rotation=90,Color=ColorSequence.new({
-        ColorSequenceKeypoint.new(0,Color3.fromRGB(9,10,19)),
-        ColorSequenceKeypoint.new(.5,Color3.fromRGB(20,14,9)),
-        ColorSequenceKeypoint.new(1,Color3.fromRGB(5,6,13))
-    })},shade)
+    -- Keep the game visible; only the menu itself gets the premium dark/gold treatment.
     local glow=make("Frame",{Name="OuterGoldGlow",AnchorPoint=Vector2.new(.5,.5),
         Position=UDim2.fromScale(.5,.5),Size=UDim2.fromOffset(606,556),
         BackgroundColor3=C.gold,BackgroundTransparency=.83,BorderSizePixel=0,ZIndex=0},gui)
