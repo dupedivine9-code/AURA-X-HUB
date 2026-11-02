@@ -64,14 +64,52 @@ function AuraUI:CreateWindow(options)
     local viewport=workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(900,700)
     local scale=math.min(1,viewport.X/650,viewport.Y/610)
     scale=math.max(.68,scale)
+    -- Ambient black/gold backdrop and layered glow, kept behind the actual menu.
+    local shade=make("Frame",{Name="AuraBackdrop",Size=UDim2.fromScale(1,1),
+        BackgroundColor3=Color3.fromRGB(2,3,7),BackgroundTransparency=.28,
+        BorderSizePixel=0,ZIndex=0},gui)
+    make("UIGradient",{Rotation=90,Color=ColorSequence.new({
+        ColorSequenceKeypoint.new(0,Color3.fromRGB(9,10,19)),
+        ColorSequenceKeypoint.new(.5,Color3.fromRGB(20,14,9)),
+        ColorSequenceKeypoint.new(1,Color3.fromRGB(5,6,13))
+    })},shade)
+    local glow=make("Frame",{Name="OuterGoldGlow",AnchorPoint=Vector2.new(.5,.5),
+        Position=UDim2.fromScale(.5,.5),Size=UDim2.fromOffset(606,556),
+        BackgroundColor3=C.gold,BackgroundTransparency=.83,BorderSizePixel=0,ZIndex=0},gui)
+    round(glow,24)
+    outline(glow,C.gold,5,.55)
+    local shadow=make("Frame",{Name="SoftShadow",AnchorPoint=Vector2.new(.5,.5),
+        Position=UDim2.fromScale(.5,.5),Size=UDim2.fromOffset(598,548),
+        BackgroundColor3=Color3.fromRGB(0,0,0),BackgroundTransparency=.18,
+        BorderSizePixel=0,ZIndex=0},gui)
+    round(shadow,20)
     local main=make("Frame",{Name="Main",AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),
-        Size=UDim2.fromOffset(590,540),BackgroundColor3=C.bg,BorderSizePixel=0,ClipsDescendants=true},gui)
-    round(main,17); outline(main,C.gold,1.35,.12)
+        Size=UDim2.fromOffset(590,540),BackgroundColor3=C.bg,BorderSizePixel=0,ClipsDescendants=true,ZIndex=1},gui)
+    round(main,17); outline(main,C.gold,1.6,.02)
     make("UIScale",{Scale=scale},main)
     make("UIGradient",{Rotation=135,Color=ColorSequence.new({
-        ColorSequenceKeypoint.new(0,Color3.fromRGB(13,14,18)),
-        ColorSequenceKeypoint.new(1,Color3.fromRGB(7,8,11))
+        ColorSequenceKeypoint.new(0,Color3.fromRGB(20,17,13)),
+        ColorSequenceKeypoint.new(.38,Color3.fromRGB(10,11,15)),
+        ColorSequenceKeypoint.new(1,Color3.fromRGB(5,6,10))
     })},main)
+    -- Decorative golden light blooms inside the panel (no external image asset needed).
+    local bloom1=make("Frame",{Name="GoldBloomLeft",Position=UDim2.new(-.18,0,-.28,0),
+        Size=UDim2.fromScale(.72,.65),BackgroundColor3=Color3.fromRGB(185,126,34),
+        BackgroundTransparency=.88,BorderSizePixel=0,ZIndex=1},main)
+    round(bloom1,220)
+    make("UIGradient",{Rotation=35,Transparency=NumberSequence.new({
+        NumberSequenceKeypoint.new(0,.08),NumberSequenceKeypoint.new(.55,.5),
+        NumberSequenceKeypoint.new(1,1)
+    })},bloom1)
+    local bloom2=make("Frame",{Name="GoldBloomRight",AnchorPoint=Vector2.new(1,1),
+        Position=UDim2.new(1.18,0,1.25,0),Size=UDim2.fromScale(.7,.62),
+        BackgroundColor3=Color3.fromRGB(190,128,37),BackgroundTransparency=.9,
+        BorderSizePixel=0,ZIndex=1},main)
+    round(bloom2,220)
+    make("UIGradient",{Rotation=225,Transparency=NumberSequence.new({
+        NumberSequenceKeypoint.new(0,.12),NumberSequenceKeypoint.new(.6,.55),
+        NumberSequenceKeypoint.new(1,1)
+    })},bloom2)
     local topAccent=make("Frame",{Name="GoldAccent",Size=UDim2.new(1,0,0,3),
         BackgroundColor3=C.gold,BorderSizePixel=0,ZIndex=5},main)
     make("UIGradient",{Rotation=0,Color=ColorSequence.new({
@@ -81,7 +119,7 @@ function AuraUI:CreateWindow(options)
     })},topAccent)
 
     local header=make("Frame",{Name="Header",Position=UDim2.fromOffset(0,3),
-        Size=UDim2.new(1,0,0,82),BackgroundColor3=C.header,BorderSizePixel=0},main)
+        Size=UDim2.new(1,0,0,82),BackgroundColor3=C.header,BackgroundTransparency=.08,BorderSizePixel=0,ZIndex=3},main)
     make("UIGradient",{Rotation=0,Color=ColorSequence.new(Color3.fromRGB(24,22,18),Color3.fromRGB(13,13,15))},header)
     local title=text(header,options.Title or "AURA X HUB",22,C.gold,Enum.Font.GothamBlack)
     title.Position=UDim2.fromOffset(23,9); title.Size=UDim2.new(1,-46,0,34)
