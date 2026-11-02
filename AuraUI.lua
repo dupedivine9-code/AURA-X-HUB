@@ -1,169 +1,252 @@
--- AuraUI - original lightweight UI library for AURA X HUB
--- Built with Roblox Instance APIs; no Fluent/Dawid dependency.
+-- AuraUI Premium - clean Black & Gold interface
 local AuraUI = {}
 AuraUI.__index = AuraUI
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
+local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local LocalPlayer = Players.LocalPlayer
-local GOLD = Color3.fromRGB(238, 190, 82)
-local GOLD_DARK = Color3.fromRGB(130, 88, 28)
-local BG = Color3.fromRGB(10, 10, 13)
-local PANEL = Color3.fromRGB(18, 18, 22)
-local ROW = Color3.fromRGB(25, 25, 30)
-local TEXT = Color3.fromRGB(245, 240, 225)
-local MUTED = Color3.fromRGB(165, 158, 143)
+local GuiService = game:GetService("GuiService")
+local player = Players.LocalPlayer
 
+local C = {
+    gold = Color3.fromRGB(239,190,78),
+    gold2 = Color3.fromRGB(151,105,38),
+    bg = Color3.fromRGB(10,10,13),
+    header = Color3.fromRGB(15,14,13),
+    panel = Color3.fromRGB(20,20,24),
+    row = Color3.fromRGB(25,25,30),
+    rowHover = Color3.fromRGB(34,31,26),
+    text = Color3.fromRGB(244,240,230),
+    muted = Color3.fromRGB(160,154,143),
+    off = Color3.fromRGB(48,43,34),
+    on = Color3.fromRGB(91,67,29)
+}
 local function make(class, props, parent)
-    local obj = Instance.new(class)
-    for k, v in pairs(props or {}) do obj[k] = v end
-    obj.Parent = parent
-    return obj
+    local o=Instance.new(class)
+    for k,v in pairs(props or {}) do o[k]=v end
+    o.Parent=parent
+    return o
 end
-local function corner(obj, radius)
-    make("UICorner", {CornerRadius = UDim.new(0, radius or 8)}, obj)
+local function round(o,n)
+    make("UICorner",{CornerRadius=UDim.new(0,n or 10)},o)
 end
-local function stroke(obj, color, thickness)
-    return make("UIStroke", {Color = color or GOLD_DARK, Thickness = thickness or 1, Transparency = 0.15}, obj)
+local function outline(o,color,thick,trans)
+    return make("UIStroke",{Color=color or C.gold2,Thickness=thick or 1,Transparency=trans or .25},o)
 end
-local function label(parent, text, size, color, font)
-    return make("TextLabel", {BackgroundTransparency=1, Text=tostring(text or ""), TextColor3=color or TEXT,
-        Font=font or Enum.Font.Gotham, TextSize=size or 13, TextXAlignment=Enum.TextXAlignment.Left,
-        TextYAlignment=Enum.TextYAlignment.Center, Size=UDim2.new(1,0,1,0)}, parent)
+local function text(parent,value,size,color,font)
+    return make("TextLabel",{BackgroundTransparency=1,Text=tostring(value or ""),TextColor3=color or C.text,
+        Font=font or Enum.Font.Gotham,TextSize=size or 14,TextXAlignment=Enum.TextXAlignment.Left,
+        TextYAlignment=Enum.TextYAlignment.Center,Size=UDim2.fromScale(1,1)},parent)
 end
-local function button(parent, text, width)
-    local b=make("TextButton", {AutoButtonColor=false, Text=text or "", TextColor3=TEXT, TextSize=12,
-        Font=Enum.Font.GothamSemibold, BackgroundColor3=Color3.fromRGB(42,35,23), Size=UDim2.new(0,width or 90,0,28)}, parent)
-    corner(b,7); stroke(b,GOLD_DARK,1)
-    b.MouseEnter:Connect(function() TweenService:Create(b,TweenInfo.new(.12),{BackgroundColor3=Color3.fromRGB(63,49,27)}):Play() end)
-    b.MouseLeave:Connect(function() TweenService:Create(b,TweenInfo.new(.12),{BackgroundColor3=Color3.fromRGB(42,35,23)}):Play() end)
+local function tween(o,props)
+    TweenService:Create(o,TweenInfo.new(.14,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),props):Play()
+end
+local function actionButton(parent,value,w)
+    local b=make("TextButton",{AutoButtonColor=false,Text=tostring(value or ""),TextColor3=C.gold,
+        TextSize=13,Font=Enum.Font.GothamSemibold,BackgroundColor3=C.off,
+        Size=UDim2.fromOffset(w or 104,34),BorderSizePixel=0},parent)
+    round(b,9)
+    b.MouseEnter:Connect(function() tween(b,{BackgroundColor3=C.on}) end)
+    b.MouseLeave:Connect(function() tween(b,{BackgroundColor3=C.off}) end)
     return b
 end
 
 function AuraUI:CreateWindow(options)
-    options = options or {}
-    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-    local gui = make("ScreenGui", {Name="AuraUI", ResetOnSpawn=false, ZIndexBehavior=Enum.ZIndexBehavior.Sibling, DisplayOrder=999}, nil)
-    local ok = pcall(function() gui.Parent = game:GetService("CoreGui") end)
-    if not ok or not gui.Parent then gui.Parent=playerGui end
-    self.GUI = gui
-    local size = options.Size or UDim2.fromOffset(460,400)
-    local main = make("Frame", {Name="Main", AnchorPoint=Vector2.new(.5,.5), Position=UDim2.fromScale(.5,.5),
-        Size=size, BackgroundColor3=BG, BorderSizePixel=0, ClipsDescendants=true}, gui)
-    corner(main,12); stroke(main,GOLD,1.5)
-    local top = make("Frame", {Size=UDim2.new(1,0,0,56), BackgroundColor3=Color3.fromRGB(15,14,13), BorderSizePixel=0}, main)
-    local title = label(top, options.Title or "AURA X HUB", 18, GOLD, Enum.Font.GothamBlack)
-    title.Position=UDim2.fromOffset(16,3); title.Size=UDim2.new(1,-32,0,27)
-    local sub = label(top, options.SubTitle or "", 10, MUTED, Enum.Font.GothamMedium)
-    sub.Position=UDim2.fromOffset(17,29); sub.Size=UDim2.new(1,-32,0,18)
-    local tabsBar = make("ScrollingFrame", {Name="Tabs", Position=UDim2.fromOffset(10,62), Size=UDim2.new(1,-20,0,34),
-        BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=2, CanvasSize=UDim2.new(0,0,0,0)}, main)
-    local tabLayout=make("UIListLayout", {FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,6), SortOrder=Enum.SortOrder.LayoutOrder}, tabsBar)
-    tabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() tabsBar.CanvasSize=UDim2.new(0,tabLayout.AbsoluteContentSize.X,0,0) end)
-    local content=make("Frame", {Name="Content", Position=UDim2.fromOffset(10,104), Size=UDim2.new(1,-20,1,-114), BackgroundTransparency=1}, main)
-    local win={GUI=gui, Main=main, Content=content, Tabs={}, MinimizeKey=options.MinimizeKey or Enum.KeyCode.LeftControl}
+    options=options or {}
+    local pg=player:WaitForChild("PlayerGui")
+    local gui=make("ScreenGui",{Name="AuraUI_Premium",ResetOnSpawn=false,IgnoreGuiInset=true,
+        ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=9999},nil)
+    local ok=pcall(function() gui.Parent=game:GetService("CoreGui") end)
+    if not ok or not gui.Parent then gui.Parent=pg end
+    if pg:FindFirstChild("AuraUI_Premium") then pg.AuraUI_Premium:Destroy() end
+    self.GUI=gui
+
+    local viewport=workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(900,700)
+    local scale=math.min(1,viewport.X/650,viewport.Y/610)
+    scale=math.max(.68,scale)
+    local main=make("Frame",{Name="Main",AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),
+        Size=UDim2.fromOffset(590,540),BackgroundColor3=C.bg,BorderSizePixel=0,ClipsDescendants=true},gui)
+    round(main,15); outline(main,C.gold,1.5,.08)
+    make("UIScale",{Scale=scale},main)
+
+    local header=make("Frame",{Name="Header",Size=UDim2.new(1,0,0,82),BackgroundColor3=C.header,
+        BorderSizePixel=0},main)
+    local title=text(header,options.Title or "AURA X HUB",22,C.gold,Enum.Font.GothamBlack)
+    title.Position=UDim2.fromOffset(22,10); title.Size=UDim2.new(1,-44,0,32)
+    local sub=text(header,options.SubTitle or "PREMIUM EDITION",12,C.muted,Enum.Font.GothamMedium)
+    sub.Position=UDim2.fromOffset(23,43); sub.Size=UDim2.new(1,-46,0,22)
+    make("Frame",{Position=UDim2.new(0,20,1,-1),Size=UDim2.new(1,-40,0,1),
+        BackgroundColor3=C.gold2,BackgroundTransparency=.45,BorderSizePixel=0},header)
+
+    local tabsBar=make("Frame",{Name="Tabs",Position=UDim2.fromOffset(16,94),
+        Size=UDim2.new(1,-32,0,42),BackgroundTransparency=1,BorderSizePixel=0},main)
+    local tabLayout=make("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,
+        Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder},tabsBar)
+
+    -- A dedicated clipped viewport keeps scrolling content below the fixed tabs.
+    local content=make("Frame",{Name="ContentViewport",Position=UDim2.fromOffset(16,148),
+        Size=UDim2.new(1,-32,1,-164),BackgroundColor3=C.bg,BorderSizePixel=0,
+        ClipsDescendants=true},main)
+    local win={GUI=gui,Main=main,Content=content,Tabs={},MinimizeKey=options.MinimizeKey or Enum.KeyCode.LeftControl}
     self.Window=win
+
     function win:SelectTab(index)
         for i,t in ipairs(self.Tabs) do
             t.Frame.Visible=(i==index)
-            t.Button.BackgroundColor3=(i==index) and Color3.fromRGB(77,57,25) or ROW
-            t.Button.TextColor3=(i==index) and GOLD or MUTED
+            t.Button.BackgroundColor3=(i==index) and Color3.fromRGB(76,56,25) or C.panel
+            t.Button.TextColor3=(i==index) and C.gold or C.muted
+            if i==index then t.Frame.CanvasPosition=Vector2.zero end
         end
     end
-    local dragging, dragStart, startPos=false,nil,nil
-    top.InputBegan:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
-            dragging=true; dragStart=input.Position; startPos=main.Position
-            input.Changed:Connect(function() if input.UserInputState==Enum.UserInputState.End then dragging=false end end)
+
+    local drag,dragAt,startAt=false,nil,nil
+    header.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+            drag=true; dragAt=i.Position; startAt=main.Position
+            i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then drag=false end end)
         end
     end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
-            local d=input.Position-dragStart
-            main.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
+    UIS.InputChanged:Connect(function(i)
+        if drag and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
+            local d=i.Position-dragAt
+            main.Position=UDim2.new(startAt.X.Scale,startAt.X.Offset+d.X,startAt.Y.Scale,startAt.Y.Offset+d.Y)
         end
     end)
-    UserInputService.InputBegan:Connect(function(input, processed)
-        if not processed and input.KeyCode==win.MinimizeKey and not UserInputService:GetFocusedTextBox() then main.Visible=not main.Visible end
+    UIS.InputBegan:Connect(function(i,processed)
+        if not processed and i.KeyCode==win.MinimizeKey and not UIS:GetFocusedTextBox() then
+            main.Visible=not main.Visible
+        end
     end)
+
     function win:AddTab(tabOptions)
         tabOptions=tabOptions or {}
-        local frame=make("ScrollingFrame", {Name=tostring(tabOptions.Title or "Tab"), Size=UDim2.fromScale(1,1), BackgroundTransparency=1,
-            BorderSizePixel=0, ScrollBarThickness=3, ScrollBarImageColor3=GOLD, CanvasSize=UDim2.new(0,0,0,0), Visible=false}, content)
-        local layout=make("UIListLayout", {Padding=UDim.new(0,7), SortOrder=Enum.SortOrder.LayoutOrder}, frame)
-        local pad=make("UIPadding", {PaddingTop=UDim.new(0,4),PaddingBottom=UDim.new(0,8),PaddingLeft=UDim.new(0,3),PaddingRight=UDim.new(0,5)}, frame)
-        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() frame.CanvasSize=UDim2.new(0,0,0,layout.AbsoluteContentSize.Y+14) end)
-        local tabBtn=button(tabsBar, tostring(tabOptions.Title or "Tab"), 96); tabBtn.Size=UDim2.fromOffset(96,30)
-        local tab={Frame=frame, Button=tabBtn}
+        local frame=make("ScrollingFrame",{Name=tostring(tabOptions.Title or "Tab"),
+            Size=UDim2.fromScale(1,1),BackgroundTransparency=1,BorderSizePixel=0,
+            ScrollBarThickness=3,ScrollBarImageColor3=C.gold,ScrollingDirection=Enum.ScrollingDirection.Y,
+            AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.new(0,0,0,0),
+            ClipsDescendants=true,Visible=false},content)
+        make("UIPadding",{PaddingTop=UDim.new(0,8),PaddingBottom=UDim.new(0,12),
+            PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,8)},frame)
+        local layout=make("UIListLayout",{Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder},frame)
+        local tabBtn=make("TextButton",{Text=tostring(tabOptions.Title or "Tab"),AutoButtonColor=false,
+            TextColor3=C.muted,TextSize=14,Font=Enum.Font.GothamBold,BackgroundColor3=C.panel,
+            BorderSizePixel=0,Size=UDim2.new(1/4,-7,1,0)},tabsBar)
+        round(tabBtn,10)
+        local tab={Frame=frame,Button=tabBtn}
         table.insert(self.Tabs,tab)
         tabBtn.MouseButton1Click:Connect(function() self:SelectTab(table.find(self.Tabs,tab)) end)
+
         local function row(height)
-            return make("Frame", {Size=UDim2.new(1,-4,0,height or 42), BackgroundColor3=ROW, BorderSizePixel=0}, frame)
+            local r=make("Frame",{Size=UDim2.new(1,-4,0,height or 52),BackgroundColor3=C.row,
+                BorderSizePixel=0,ClipsDescendants=false},frame)
+            round(r,10)
+            r.MouseEnter:Connect(function() tween(r,{BackgroundColor3=C.rowHover}) end)
+            r.MouseLeave:Connect(function() tween(r,{BackgroundColor3=C.row}) end)
+            return r
+        end
+        local function rowLabel(r,value)
+            local l=text(r,value,14,C.text,Enum.Font.GothamMedium)
+            l.Position=UDim2.fromOffset(16,0); l.Size=UDim2.new(1,-190,1,0)
+            return l
         end
         function tab:AddSection(name)
-            local r=row(27); r.BackgroundTransparency=1
-            local l=label(r,string.upper(name),11,GOLD,Enum.Font.GothamBold); l.Position=UDim2.fromOffset(4,0); l.Size=UDim2.new(1,-8,1,0)
-            make("Frame",{Position=UDim2.new(0,4,1,-1),Size=UDim2.new(1,-8,0,1),BackgroundColor3=GOLD_DARK,BorderSizePixel=0},r)
+            local r=make("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1},frame)
+            local l=text(r,string.upper(name),12,C.gold,Enum.Font.GothamBold)
+            l.Position=UDim2.fromOffset(7,0); l.Size=UDim2.new(1,-14,1,-4)
+            make("Frame",{Position=UDim2.new(0,7,1,-1),Size=UDim2.new(1,-14,0,1),
+                BackgroundColor3=C.gold2,BackgroundTransparency=.25,BorderSizePixel=0},r)
         end
-        function tab:AddToggle(id, cfg)
-            cfg=cfg or {}; local r=row(42); corner(r,8)
-            local l=label(r,cfg.Title or id,12,TEXT,Enum.Font.GothamMedium); l.Position=UDim2.fromOffset(12,0); l.Size=UDim2.new(1,-82,1,0)
+        function tab:AddToggle(id,cfg)
+            cfg=cfg or {}; local r=row(50); rowLabel(r,cfg.Title or id)
             local state=cfg.Default==true
-            local sw=button(r,state and "ON" or "OFF",48); sw.AnchorPoint=Vector2.new(1,.5); sw.Position=UDim2.new(1,-9,.5,0)
+            local sw=actionButton(r,state and "ON" or "OFF",68)
+            sw.AnchorPoint=Vector2.new(1,.5); sw.Position=UDim2.new(1,-12,.5,0)
             local control={Value=state}
-            local function set(v, fire) state=(v==true); control.Value=state; sw.Text=state and "ON" or "OFF"; sw.BackgroundColor3=state and Color3.fromRGB(93,68,27) or Color3.fromRGB(42,35,23); if fire and cfg.Callback then task.spawn(cfg.Callback,state) end end
-            sw.MouseButton1Click:Connect(function() set(not state,true) end); control.SetValue=function(_,v) set(v,true) end
-            return control
+            local function set(v,fire)
+                state=(v==true); control.Value=state
+                sw.Text=state and "ON" or "OFF"; sw.BackgroundColor3=state and C.on or C.off
+                sw.TextColor3=state and C.gold or C.muted
+                if fire and cfg.Callback then task.spawn(cfg.Callback,state) end
+            end
+            sw.MouseButton1Click:Connect(function() set(not state,true) end)
+            control.SetValue=function(_,v) set(v,true) end
+            set(state,false); return control
         end
         function tab:AddDropdown(id,cfg)
-            cfg=cfg or {}; local r=row(44); corner(r,8)
-            local l=label(r,cfg.Title or id,12,TEXT,Enum.Font.GothamMedium); l.Position=UDim2.fromOffset(12,0); l.Size=UDim2.new(.48,0,1,0)
+            cfg=cfg or {}; local r=row(54); rowLabel(r,cfg.Title or id)
             local values=cfg.Values or {}; local selected=cfg.Default
-            local b=button(r,tostring(selected or "Select").." ▾",150); b.AnchorPoint=Vector2.new(1,.5); b.Position=UDim2.new(1,-9,.5,0)
+            local b=actionButton(r,tostring(selected or "Select").."  ▾",190)
+            b.AnchorPoint=Vector2.new(1,.5); b.Position=UDim2.new(1,-12,.5,0)
+            local popup
             local control={}
-            local function refresh() b.Text=tostring(selected or "Select").." ▾" end
-            local popup=nil
+            local function close() if popup then popup:Destroy(); popup=nil end end
+            local function refresh() b.Text=tostring(selected or "Select").."  ▾" end
             b.MouseButton1Click:Connect(function()
-                if popup then popup:Destroy(); popup=nil; return end
-                popup=make("Frame",{Position=UDim2.new(1,-162,1,4),Size=UDim2.fromOffset(154,math.min(150,math.max(34,#values*30))),BackgroundColor3=PANEL,ZIndex=20},r); corner(popup,7); stroke(popup,GOLD_DARK,1)
-                local sf=make("ScrollingFrame",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,CanvasSize=UDim2.new(0,0,0,#values*30),ZIndex=21},popup)
-                local lay=make("UIListLayout",{Padding=UDim.new(0,2)},sf)
-                for _,v in ipairs(values) do local opt=button(sf,tostring(v),138); opt.Size=UDim2.new(1,-8,0,28); opt.ZIndex=22; opt.MouseButton1Click:Connect(function() selected=v; refresh(); popup:Destroy(); popup=nil; if cfg.Callback then cfg.Callback(v) end end) end
+                close()
+                local abs=r.AbsolutePosition
+                local rowH=math.min(190,math.max(38,#values*36))
+                popup=make("Frame",{Name="DropdownPopup",Position=UDim2.fromOffset(
+                    math.clamp(abs.X+r.AbsoluteSize.X-206,4,math.max(4,viewport.X-210)),
+                    math.clamp(abs.Y+r.AbsoluteSize.Y+4,4,math.max(4,viewport.Y-rowH-8))),
+                    Size=UDim2.fromOffset(194,rowH),BackgroundColor3=C.panel,
+                    BorderSizePixel=0,ZIndex=100},gui)
+                round(popup,10); outline(popup,C.gold2,1,.1)
+                local sf=make("ScrollingFrame",{Size=UDim2.new(1,-8,1,-8),Position=UDim2.fromOffset(4,4),
+                    BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,
+                    ScrollBarImageColor3=C.gold,CanvasSize=UDim2.new(0,0,0,#values*36),
+                    ZIndex=101},popup)
+                make("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},sf)
+                for _,v in ipairs(values) do
+                    local opt=make("TextButton",{Size=UDim2.new(1,-4,0,32),Text=tostring(v),
+                        TextColor3=C.text,TextSize=13,Font=Enum.Font.GothamMedium,
+                        BackgroundColor3=C.row,AutoButtonColor=false,BorderSizePixel=0,ZIndex=102},sf)
+                    round(opt,7)
+                    opt.MouseButton1Click:Connect(function()
+                        selected=v; refresh(); close()
+                        if cfg.Callback then cfg.Callback(v) end
+                    end)
+                end
             end)
             function control:SetValues(v) values=v or {} end
             function control:SetValue(v) selected=v; refresh(); if cfg.Callback then cfg.Callback(v) end end
             refresh(); return control
         end
         function tab:AddSlider(id,cfg)
-            cfg=cfg or {}; local r=row(55); corner(r,8)
-            local min,max=cfg.Min or 0,cfg.Max or 100; local value=math.clamp(tonumber(cfg.Default) or min,min,max)
-            local l=label(r,(cfg.Title or id).."  ·  "..tostring(value),12,TEXT,Enum.Font.GothamMedium); l.Position=UDim2.fromOffset(12,2); l.Size=UDim2.new(1,-24,0,22)
-            local track=make("Frame",{Position=UDim2.new(0,12,0,34),Size=UDim2.new(1,-24,0,8),BackgroundColor3=Color3.fromRGB(55,49,39),BorderSizePixel=0},r); corner(track,5)
-            local fill=make("Frame",{Size=UDim2.new((value-min)/math.max(1,max-min),0,1,0),BackgroundColor3=GOLD,BorderSizePixel=0},track); corner(fill,5)
-            local knob=make("TextButton",{Text="",AutoButtonColor=false,AnchorPoint=Vector2.new(.5,.5),Position=UDim2.new((value-min)/math.max(1,max-min),0,.5,0),Size=UDim2.fromOffset(16,16),BackgroundColor3=TEXT,BorderSizePixel=0},track); corner(knob,8)
+            cfg=cfg or {}; local r=row(66)
+            local min,max=cfg.Min or 0,cfg.Max or 100
+            local value=math.clamp(tonumber(cfg.Default) or min,min,max)
+            local l=text(r,(cfg.Title or id).."  ·  "..tostring(value),13,C.text,Enum.Font.GothamMedium)
+            l.Position=UDim2.fromOffset(16,4); l.Size=UDim2.new(1,-30,0,24)
+            local track=make("Frame",{Position=UDim2.new(0,16,0,42),Size=UDim2.new(1,-32,0,7),
+                BackgroundColor3=Color3.fromRGB(57,51,40),BorderSizePixel=0},r); round(track,5)
+            local a=(value-min)/math.max(1,max-min)
+            local fill=make("Frame",{Size=UDim2.new(a,0,1,0),BackgroundColor3=C.gold,BorderSizePixel=0},track); round(fill,5)
+            local knob=make("Frame",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.new(a,0,.5,0),
+                Size=UDim2.fromOffset(17,17),BackgroundColor3=C.text,BorderSizePixel=0},track); round(knob,9)
             local control={Value=value}; local sliding=false
-            local function setFromX(x)
-                local a=math.clamp((x-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1); value=min+(max-min)*a
-                local round=10^(cfg.Rounding or 0); value=math.floor(value*round+.5)/round; control.Value=value
-                fill.Size=UDim2.new(a,0,1,0); knob.Position=UDim2.new(a,0,.5,0); l.Text=(cfg.Title or id).."  ·  "..tostring(value)
+            local function setX(x)
+                local p=math.clamp((x-track.AbsolutePosition.X)/math.max(1,track.AbsoluteSize.X),0,1)
+                local raw=min+(max-min)*p; local mul=10^(cfg.Rounding or 0)
+                value=math.floor(raw*mul+.5)/mul; control.Value=value
+                fill.Size=UDim2.new(p,0,1,0); knob.Position=UDim2.new(p,0,.5,0)
+                l.Text=(cfg.Title or id).."  ·  "..tostring(value)
                 if cfg.Callback then cfg.Callback(value) end
             end
             knob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then sliding=true end end)
-            UserInputService.InputChanged:Connect(function(i) if sliding and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then setFromX(i.Position.X) end end)
-            UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then sliding=false end end)
-            track.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then setFromX(i.Position.X); sliding=true end end)
+            track.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then sliding=true; setX(i.Position.X) end end)
+            UIS.InputChanged:Connect(function(i) if sliding and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then setX(i.Position.X) end end)
+            UIS.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then sliding=false end end)
             return control
         end
         function tab:AddKeybind(id,cfg)
-            cfg=cfg or {}; local r=row(42); corner(r,8)
-            local l=label(r,cfg.Title or id,12,TEXT,Enum.Font.GothamMedium); l.Position=UDim2.fromOffset(12,0); l.Size=UDim2.new(1,-115,1,0)
-            local current=cfg.Default or "None"; local b=button(r,tostring(current),92); b.AnchorPoint=Vector2.new(1,.5); b.Position=UDim2.new(1,-9,.5,0)
+            cfg=cfg or {}; local r=row(50); rowLabel(r,cfg.Title or id)
+            local current=cfg.Default or "None"
+            local b=actionButton(r,current,100); b.AnchorPoint=Vector2.new(1,.5); b.Position=UDim2.new(1,-12,.5,0)
             local listening=false
-            b.MouseButton1Click:Connect(function() listening=true; b.Text="Press key" end)
-            UserInputService.InputBegan:Connect(function(input,processed)
-                if listening and input.UserInputType==Enum.UserInputType.Keyboard then
-                    listening=false; current=input.KeyCode.Name; b.Text=current
+            b.MouseButton1Click:Connect(function() listening=true; b.Text="Press key..." end)
+            UIS.InputBegan:Connect(function(i,processed)
+                if listening and i.UserInputType==Enum.UserInputType.Keyboard then
+                    listening=false; current=i.KeyCode.Name; b.Text=current
                     if cfg.ChangedCallback then cfg.ChangedCallback(current) end
                 end
             end)
