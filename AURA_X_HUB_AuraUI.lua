@@ -1,0 +1,2124 @@
+local AuraUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/dupedivine9-code/AURA-X-HUB/main/AuraUI.lua"))()
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local CollectionService = game:GetService("CollectionService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
+local GuiService = game:GetService("GuiService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local Config = {
+    AutoKill = false,
+    AutoAttack = false,
+    AttackPosition = "Under",
+    AttackDistance = 7,
+    ClickKillPlayer = false,
+    TargetKill = false,
+    TargetPlayer = "",
+    FastAttack = false,
+    AntiRagdoll = false,
+    AntiVoid = false,
+    DashNoCooldown = false,
+    WalkSpeedEnabled = false,
+    WalkSpeed = 16,
+    InfJump = false,
+    ESPEnabled = false,
+    AimlockEnabled = false,
+    AimlockKeybind = "T",
+    AimlockFloatVisible = false,
+    AimlockFloatPos = { xs = 0.85, xo = 0, ys = 0.5, yo = 0 },
+    FloatSize = 46,
+    VoidTPKeybind = "G",
+    VoidTPFloatVisible = false,
+    VoidTPFloatPos = { xs = 0.85, xo = 0, ys = 0.6, yo = 0 },
+    DisableKeybinds = false,
+}
+
+local SAVE_FOLDER = "StarCrowHub"
+local SAVE_FILE = SAVE_FOLDER .. "/AnimeAbilityArenaConfig.json"
+
+local function SaveConfig()
+    pcall(function()
+        if not isfolder(SAVE_FOLDER) then makefolder(SAVE_FOLDER) end
+        writefile(SAVE_FILE, HttpService:JSONEncode(Config))
+    end)
+end
+
+local function LoadConfig()
+    pcall(function()
+        if isfile(SAVE_FILE) then
+            local decoded = HttpService:JSONDecode(readfile(SAVE_FILE))
+            for k, v in pairs(decoded) do
+                if Config[k] ~= nil then
+                    Config[k] = v
+                end
+            end
+        end
+    end)
+end
+
+LoadConfig()
+
+LocalPlayer.Idled:Connect(function()
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new(0, 0))
+    end)
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 2, true, game, 1)
+        task.wait(0.05)
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 2, false, game, 1)
+    end)
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(300)
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new(0, 0))
+        end)
+    end
+end)
+
+local setUpval = debug.setupvalue or setupvalue
+local getUpvals = debug.getupvalues or getupvalues
+
+local origChargesUpvalIdx = nil
+local origChargesUpvalVal = 1
+local origCooldownUpvalIdx = nil
+local origCooldownUpvalVal = 1
+local origDashUpvalsSaved = false
+
+local function saveOrigDashUpvals(dashCtrl)
+    if origDashUpvalsSaved or not dashCtrl or not getUpvals then return end
+    pcall(function()
+        if dashCtrl.GetCharges then
+            for idx, val in pairs(getUpvals(dashCtrl.GetCharges)) do
+                if type(val) == "number" then
+                    origChargesUpvalIdx = idx
+                    origChargesUpvalVal = val
+                end
+            end
+        end
+        if dashCtrl.GetCooldown then
+            for idx, val in pairs(getUpvals(dashCtrl.GetCooldown)) do
+                if type(val) == "number" then
+                    origCooldownUpvalIdx = idx
+                    origCooldownUpvalVal = val
+                end
+            end
+        end
+        origDashUpvalsSaved = true
+    end)
+end
+
+local function resetDashState(dashCtrl)
+    if not dashCtrl or not setUpval or not getUpvals then return end
+    saveOrigDashUpvals(dashCtrl)
+    pcall(function()
+        if dashCtrl.GetCharges then
+            for idx, val in pairs(getUpvals(dashCtrl.GetCharges)) do
+                if type(val) == "number" then
+                    setUpval(dashCtrl.GetCharges, idx, 999)
+                end
+            end
+        end
+        if dashCtrl.GetCooldown then
+            for idx, val in pairs(getUpvals(dashCtrl.GetCooldown)) do
+                if type(val) == "number" and val > 0 then
+                    setUpval(dashCtrl.GetCooldown, idx, 0)
+                end
+            end
+        end
+    end)
+end
+
+local function restoreDashState(dashCtrl)
+    if not dashCtrl or not setUpval then return end
+    pcall(function()
+        if dashCtrl.GetCharges and origChargesUpvalIdx then
+            setUpval(dashCtrl.GetCharges, origChargesUpvalIdx, origChargesUpvalVal)
+        end
+        if dashCtrl.GetCooldown and origCooldownUpvalIdx then
+            setUpval(dashCtrl.GetCooldown, origCooldownUpvalIdx, origCooldownUpvalVal)
+        end
+    end)
+end
+
+local restoreAllDash = nil
+
+local AbilityControllerMod = nil
+local CasterBusyMod = nil
+local RegistryMod = nil
+local DashControllerMod = nil
+local singleTargetChar = nil
+local currentAutoKillChar = nil
+local aimlockTargetChar = nil
+local aimlockFloatBtn = nil
+local aimlockFloatStroke = nil
+local voidTPFloatBtn = nil
+local voidTPFloatStroke = nil
+local getAutoAttackTarget = nil
+local lastSkillUseTick = 0
+local currentSkillEndTime = 0
+local activeSkillTrack = nil
+local voidTargetCF = CFrame.new(-50.93, 397.96, -133.75)
+local susanooVoidCF = CFrame.new(145.42, 325.06, -309.92)
+local voidTPActive = false
+local voidTPSafeCF = nil
+
+local function triggerVoidTP()
+    if voidTPActive then return end
+    task.spawn(function()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        voidTPSafeCF = hrp.CFrame
+        voidTPActive = true
+        local startTime = os.clock()
+        while voidTPActive and os.clock() - startTime < 5 do
+            local c = LocalPlayer.Character
+            local h = c and c:FindFirstChild("HumanoidRootPart")
+            if h then
+                h.CFrame = susanooVoidCF
+                h.AssemblyLinearVelocity = Vector3.zero
+                h.AssemblyAngularVelocity = Vector3.zero
+            end
+            task.wait(0.03)
+        end
+        for i = 1, 10 do
+            local c = LocalPlayer.Character
+            local h = c and c:FindFirstChild("HumanoidRootPart")
+            if h and voidTPSafeCF then
+                h.CFrame = voidTPSafeCF + Vector3.new(0, 5, 0)
+                h.AssemblyLinearVelocity = Vector3.zero
+                h.AssemblyAngularVelocity = Vector3.zero
+            end
+            task.wait(0.03)
+        end
+        voidTPActive = false
+    end)
+end
+
+local function isUsingSkill()
+    local now = os.clock()
+    if now - lastSkillUseTick < 0.45 then
+        return true
+    end
+    if activeSkillTrack and activeSkillTrack.IsPlaying then
+        if now - lastSkillUseTick < 3.5 then
+            return true
+        else
+            activeSkillTrack = nil
+        end
+    end
+    if now < currentSkillEndTime then
+        return true
+    end
+    return false
+end
+
+local function isCombatActive()
+    return Config.AutoKill or Config.TargetKill or singleTargetChar ~= nil
+end
+
+local function isAntiRagdollActive()
+    return Config.AntiRagdoll or Config.AutoKill or Config.ClickKillPlayer
+end
+
+local function isAntiVoidActive()
+    return Config.AntiVoid or Config.AutoKill or Config.ClickKillPlayer
+end
+
+local cachedPrimaryAbilityId = nil
+local lastMovesetName = nil
+local punchAbilityCache = {}
+local cachedAnimator = nil
+local cachedCharacter = nil
+
+local hookedAnimators = {}
+
+local function hookAnimator(anim)
+    if not anim or hookedAnimators[anim] then return end
+    hookedAnimators[anim] = true
+    anim.AnimationPlayed:Connect(function(track)
+        local now = os.clock()
+        if now - lastSkillUseTick < 0.4 then
+            local name = track.Name and track.Name:lower() or ""
+            local aObj = track.Animation
+            local aName = aObj and aObj.Name and aObj.Name:lower() or ""
+            if not name:find("dash") and not aName:find("dash") and not name:find("walk") and not aName:find("run") and not name:find("idle") then
+                activeSkillTrack = track
+            end
+        end
+    end)
+end
+
+local function getAnimator()
+    local char = LocalPlayer.Character
+    if not char then
+        cachedAnimator = nil
+        cachedCharacter = nil
+        return nil
+    end
+    if char == cachedCharacter and cachedAnimator and cachedAnimator.Parent then
+        return cachedAnimator
+    end
+    cachedCharacter = char
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    cachedAnimator = hum and hum:FindFirstChildOfClass("Animator")
+    if cachedAnimator then
+        hookAnimator(cachedAnimator)
+    end
+    return cachedAnimator
+end
+
+local function getPrimaryAbilityId()
+    if not RegistryMod then return nil end
+    local movesetName = LocalPlayer:GetAttribute("Moveset")
+    if not movesetName and LocalPlayer.Character then
+        movesetName = LocalPlayer.Character:GetAttribute("Moveset")
+    end
+    if not movesetName then return nil end
+    if movesetName == lastMovesetName and cachedPrimaryAbilityId then
+        return cachedPrimaryAbilityId
+    end
+    lastMovesetName = movesetName
+    table.clear(punchAbilityCache)
+    local moveset = RegistryMod.GetMoveset and RegistryMod.GetMoveset(movesetName)
+    if moveset and moveset.Abilities and moveset.Abilities[1] then
+        cachedPrimaryAbilityId = moveset.Abilities[1].Id
+        return cachedPrimaryAbilityId
+    end
+    return nil
+end
+
+local function stopExcessActionTracks()
+    local animator = getAnimator()
+    if not animator then return end
+    local playing = animator:GetPlayingAnimationTracks()
+    for _, track in ipairs(playing) do
+        local name = track.Name and track.Name:lower() or ""
+        local anim = track.Animation
+        local animName = anim and anim.Name and anim.Name:lower() or ""
+        if not name:find("dash") and not animName:find("dash") then
+            if track.Priority and track.Priority.Value >= Enum.AnimationPriority.Action.Value then
+                track:Stop(0)
+            end
+        end
+    end
+end
+
+local lastAttackTick = 0
+local ATTACK_INTERVAL = 0.01
+
+local function doAttack(aid)
+    if isUsingSkill() then return end
+    aid = aid or getPrimaryAbilityId()
+    if not (aid and AbilityControllerMod) then return end
+    local now = os.clock()
+    local interval = Config.FastAttack and ATTACK_INTERVAL or 0.35
+    if now - lastAttackTick < interval then return end
+    lastAttackTick = now
+    pcall(function()
+        if Config.FastAttack then
+            stopExcessActionTracks()
+            if CasterBusyMod then
+                CasterBusyMod.Release()
+            end
+        end
+        AbilityControllerMod.Activate(aid)
+    end)
+end
+
+local function isPunchAbility(res, ability, id)
+    local checkId = id or (type(ability) == "string" and ability) or (type(ability) == "table" and ability.Id)
+    if checkId and punchAbilityCache[checkId] ~= nil then
+        return punchAbilityCache[checkId]
+    end
+    local primId = getPrimaryAbilityId()
+    if checkId and primId and checkId == primId then
+        if checkId then punchAbilityCache[checkId] = true end
+        return true
+    end
+    if type(res) == "table" then
+        if res.Kind == "Attack" or res.Name == "Attack" then
+            if checkId then punchAbilityCache[checkId] = true end
+            return true
+        end
+    end
+    if type(ability) == "table" then
+        if ability.Kind == "Attack" or ability.Name == "Attack" then
+            if checkId then punchAbilityCache[checkId] = true end
+            return true
+        end
+        if ability.Config and type(ability.Config) == "table" then
+            if ability.Config.Kind == "Attack" or ability.Config.Name == "Attack" then
+                if checkId then punchAbilityCache[checkId] = true end
+                return true
+            end
+        end
+        if primId and ability.Id == primId then
+            if checkId then punchAbilityCache[checkId] = true end
+            return true
+        end
+    end
+    if type(ability) == "string" and primId and ability == primId then
+        punchAbilityCache[ability] = true
+        return true
+    end
+    if RegistryMod and RegistryMod.GetAbilityById and checkId then
+        local ab = RegistryMod.GetAbilityById(checkId)
+        if ab then
+            if ab.Kind == "Attack" or ab.Name == "Attack" then
+                punchAbilityCache[checkId] = true
+                return true
+            end
+            if ab.Config and (ab.Config.Kind == "Attack" or ab.Config.Name == "Attack") then
+                punchAbilityCache[checkId] = true
+                return true
+            end
+        end
+    end
+    if checkId then punchAbilityCache[checkId] = false end
+    return false
+end
+
+pcall(function()
+    local Shared = ReplicatedStorage:WaitForChild("Shared", 5)
+    if Shared then
+        local AbilityController = require(Shared:WaitForChild("Client"):WaitForChild("AbilityController"))
+        local CasterBusy = require(Shared:WaitForChild("Client"):WaitForChild("CasterBusy"))
+        local Overrides = require(Shared:WaitForChild("Abilities"):WaitForChild("Overrides"))
+        local DashController = require(Shared:WaitForChild("Client"):WaitForChild("DashController"))
+        local Controls = require(Shared:WaitForChild("Client"):WaitForChild("Controls"))
+        local GameConfig = require(Shared:WaitForChild("Config"))
+        local Registry = require(Shared:WaitForChild("Abilities"):WaitForChild("Registry"))
+        local RagdollUtil = require(Shared:WaitForChild("Util"):WaitForChild("RagdollUtil"))
+        local RagdollCancelCtrl = require(Shared:WaitForChild("Client"):WaitForChild("RagdollCancelController"))
+        local Network = require(Shared:WaitForChild("Network"))
+        AbilityControllerMod = AbilityController
+        CasterBusyMod = CasterBusy
+        RegistryMod = Registry
+        DashControllerMod = DashController
+
+        local oldActivate = AbilityController.Activate
+        AbilityController.Activate = function(id)
+            local isPunch = isPunchAbility(nil, nil, id)
+            if not isPunch then
+                lastSkillUseTick = os.clock()
+                local castDur = 0.8
+                local abName = ""
+                local abKind = ""
+                if RegistryMod and RegistryMod.GetAbilityById then
+                    pcall(function()
+                        local ab = RegistryMod.GetAbilityById(id)
+                        if type(ab) == "table" then
+                            abName = tostring(ab.Name or "")
+                            abKind = tostring(ab.Kind or "")
+                            local d = ab.Duration or (ab.Config and ab.Config.Duration) or ab.CastTime or (ab.Config and ab.Config.CastTime) or ab.HoldTime or (ab.Config and ab.HoldTime) or (ab.Config and ab.Config.MaxDuration)
+                            if type(d) == "number" and d > 0 then
+                                castDur = d
+                            end
+                        end
+                    end)
+                end
+                currentSkillEndTime = os.clock() + castDur
+            end
+            if Config.FastAttack and not isUsingSkill() and isPunch then
+                stopExcessActionTracks()
+                pcall(function() CasterBusy.Release() end)
+            end
+            return oldActivate(id)
+        end
+
+        local oldRelease = CasterBusy.Release
+        if oldRelease then
+            CasterBusy.Release = function(...)
+                if os.clock() - lastSkillUseTick > 0.3 then
+                    currentSkillEndTime = 0
+                    activeSkillTrack = nil
+                    if voidTPActive then
+                        voidTPActive = false
+                    end
+                end
+                return oldRelease(...)
+            end
+        end
+
+        local cachedPunchConfig = nil
+        local lastPunchRes = nil
+
+        local oldConfig = Overrides.Config
+        Overrides.Config = function(player, ability)
+            local res = oldConfig(player, ability)
+            if Config.FastAttack and type(res) == "table" and isPunchAbility(res, ability, nil) then
+                if res ~= lastPunchRes or not cachedPunchConfig then
+                    lastPunchRes = res
+                    cachedPunchConfig = {}
+                    for k, v in pairs(res) do cachedPunchConfig[k] = v end
+                    cachedPunchConfig.Cooldown = 0
+                end
+                return cachedPunchConfig
+            end
+            return res
+        end
+
+        local origDashCooldown = GameConfig.Dash and GameConfig.Dash.Cooldown or 1
+        local origDashCharges = GameConfig.Dash and GameConfig.Dash.Charges or 1
+        local movesetOrigData = {}
+
+        restoreAllDash = function()
+            if GameConfig and GameConfig.Dash then
+                GameConfig.Dash.Cooldown = origDashCooldown
+                GameConfig.Dash.Charges = origDashCharges
+            end
+            for m, data in pairs(movesetOrigData) do
+                if data then
+                    m.DashRefill = data.DashRefill
+                    m.Dashes = data.Dashes
+                end
+            end
+            if DashControllerMod then
+                restoreDashState(DashControllerMod)
+            end
+        end
+
+        local oldGetMoveset = Registry.GetMoveset
+        Registry.GetMoveset = function(name)
+            local m = oldGetMoveset(name)
+            if m then
+                if not movesetOrigData[m] then
+                    movesetOrigData[m] = {
+                        DashRefill = m.DashRefill,
+                        Dashes = m.Dashes
+                    }
+                end
+                if Config.DashNoCooldown then
+                    m.DashRefill = 0.001
+                    m.Dashes = 999
+                else
+                    m.DashRefill = movesetOrigData[m].DashRefill
+                    m.Dashes = movesetOrigData[m].Dashes
+                end
+            end
+            return m
+        end
+
+        local oldGetDashCooldown = DashController.GetCooldown
+        local lastNormalDashTick = 0
+
+        DashController.GetCooldown = function(...)
+            if Config.DashNoCooldown then return 0, 0 end
+            return oldGetDashCooldown(...)
+        end
+
+        local function isNormalCooldownActive()
+            if Config.DashNoCooldown then return false end
+            local cd = 0
+            if oldGetDashCooldown then
+                local s, r = pcall(oldGetDashCooldown)
+                if s and type(r) == "number" then cd = r end
+            end
+            if cd > 0.05 then return true end
+            local baseCD = (GameConfig.Dash and GameConfig.Dash.Cooldown) or origDashCooldown or 1
+            if os.clock() - lastNormalDashTick < baseCD then return true end
+            return false
+        end
+
+        local oldIsDashLocked = Controls.IsDashLocked
+        if oldIsDashLocked then
+            Controls.IsDashLocked = function(...)
+                if Config.DashNoCooldown then return false end
+                if isNormalCooldownActive() then return true end
+                return oldIsDashLocked(...)
+            end
+        end
+
+        local oldIsDashing = Controls.IsDashing
+        if oldIsDashing then
+            Controls.IsDashing = function(...)
+                if Config.DashNoCooldown then return false end
+                return oldIsDashing(...)
+            end
+        end
+
+        local lastDashTick = 0
+        local oldTryDash = DashController.TryDash
+        DashController.TryDash = function(...)
+            if not Config.DashNoCooldown then
+                if isNormalCooldownActive() then
+                    return false
+                end
+                if GameConfig.Dash then
+                    GameConfig.Dash.Cooldown = origDashCooldown
+                    GameConfig.Dash.Charges = origDashCharges
+                end
+                restoreDashState(DashController)
+                local res = oldTryDash(...)
+                if res then
+                    lastNormalDashTick = os.clock()
+                end
+                return res
+            end
+
+            local now = os.clock()
+            if now - lastDashTick < 0.08 then return false end
+            lastDashTick = now
+            if GameConfig.Dash then
+                GameConfig.Dash.Cooldown = 0
+                GameConfig.Dash.Charges = 999
+            end
+            resetDashState(DashController)
+            pcall(function() CasterBusy.Release() end)
+            local res = oldTryDash(...)
+            if Config.DashNoCooldown then
+                resetDashState(DashController)
+            end
+            return res
+        end
+
+        local oldIsRagdolled = RagdollUtil.IsRagdolled
+        RagdollUtil.IsRagdolled = function(char)
+            if isAntiRagdollActive() and char == LocalPlayer.Character then
+                return false
+            end
+            return oldIsRagdolled(char)
+        end
+
+        local oldIsIncapacitated = RagdollUtil.IsIncapacitated
+        RagdollUtil.IsIncapacitated = function(char)
+            if isAntiRagdollActive() and char == LocalPlayer.Character then
+                return false
+            end
+            return oldIsIncapacitated(char)
+        end
+
+        local oldSetState = RagdollUtil.SetState
+        RagdollUtil.SetState = function(char, state)
+            if isAntiRagdollActive() and char == LocalPlayer.Character and state == "Ragdoll" then
+                return oldSetState(char, "None")
+            end
+            return oldSetState(char, state)
+        end
+
+        local oldAttempt = RagdollCancelCtrl.Attempt
+        RagdollCancelCtrl.Attempt = function(...)
+            if isAntiRagdollActive() then
+                pcall(function()
+                    Network.Combat.packets.RagdollCancel.send({ Active = true })
+                end)
+                return true
+            end
+            return oldAttempt(...)
+        end
+
+        CollectionService:GetInstanceAddedSignal("BG_RagdollActive"):Connect(function(char)
+            if isAntiRagdollActive() and char == LocalPlayer.Character then
+                task.defer(function()
+                    CollectionService:RemoveTag(char, "BG_RagdollActive")
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        hum.PlatformStand = false
+                        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    end
+                    pcall(function()
+                        Network.Combat.packets.RagdollCancel.send({ Active = true })
+                    end)
+                end)
+            end
+        end)
+    end
+end)
+
+
+local cachedLobby = workspace:FindFirstChild("Lobby")
+
+local function isInsideLobby(targetPart)
+    if not targetPart then return true end
+    local char = targetPart:IsA("Model") and targetPart or targetPart:FindFirstAncestorOfClass("Model")
+    if not char then return false end
+    local plr = Players:GetPlayerFromCharacter(char)
+    if plr then
+        local inGame = plr:GetAttribute("InGame")
+        if inGame == false then return true end
+        if inGame == true then return false end
+    end
+    if not cachedLobby or not cachedLobby.Parent then
+        cachedLobby = workspace:FindFirstChild("Lobby")
+    end
+    if cachedLobby and char:IsDescendantOf(cachedLobby) then
+        return true
+    end
+    return false
+end
+
+local cachedPlayBtn = nil
+local lastPlayClick = 0
+local function clickPlayButton()
+    local now = os.clock()
+    if now - lastPlayClick < 1.2 then return false end
+    lastPlayClick = now
+    if cachedPlayBtn and cachedPlayBtn.Parent and cachedPlayBtn.Visible and cachedPlayBtn.AbsoluteSize.X > 0 and cachedPlayBtn.AbsoluteSize.Y > 0 then
+        local btn = cachedPlayBtn
+        if firesignal then
+            pcall(function() firesignal(btn.MouseButton1Down) end)
+            pcall(function() firesignal(btn.MouseButton1Click) end)
+            pcall(function() firesignal(btn.Activated) end)
+            pcall(function() firesignal(btn.MouseButton1Up) end)
+        end
+        if getconnections then
+            for _, sig in ipairs({"Activated", "MouseButton1Click", "MouseButton1Up"}) do
+                pcall(function()
+                    for _, c in ipairs(getconnections(btn[sig])) do
+                        c:Fire()
+                    end
+                end)
+            end
+        end
+        pcall(function()
+            local center = btn.AbsolutePosition + (btn.AbsoluteSize / 2)
+            local inset = GuiService:GetGuiInset()
+            VirtualInputManager:SendMouseButtonEvent(center.X, center.Y + inset.Y, 0, true, game, 1)
+            task.wait(0.05)
+            VirtualInputManager:SendMouseButtonEvent(center.X, center.Y + inset.Y, 0, false, game, 1)
+        end)
+        return true
+    end
+
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:FindFirstChild("PlayerGui")
+    if not pGui then return false end
+    for _, obj in ipairs(pGui:GetDescendants()) do
+        if obj.Name == "PlayButton" or obj.Name == "Play" or (obj:IsA("TextButton") and obj.Text:lower():find("play")) then
+            local btn = obj:IsA("GuiButton") and obj or obj:FindFirstChildWhichIsA("GuiButton", true)
+            if btn and btn.Visible and btn.AbsoluteSize.X > 0 and btn.AbsoluteSize.Y > 0 then
+                cachedPlayBtn = btn
+                if firesignal then
+                    pcall(function() firesignal(btn.MouseButton1Down) end)
+                    pcall(function() firesignal(btn.MouseButton1Click) end)
+                    pcall(function() firesignal(btn.Activated) end)
+                    pcall(function() firesignal(btn.MouseButton1Up) end)
+                end
+                if getconnections then
+                    for _, sig in ipairs({"Activated", "MouseButton1Click", "MouseButton1Up"}) do
+                        pcall(function()
+                            for _, c in ipairs(getconnections(btn[sig])) do
+                                c:Fire()
+                            end
+                        end)
+                    end
+                end
+                pcall(function()
+                    local center = btn.AbsolutePosition + (btn.AbsoluteSize / 2)
+                    local inset = GuiService:GetGuiInset()
+                    VirtualInputManager:SendMouseButtonEvent(center.X, center.Y + inset.Y, 0, true, game, 1)
+                    task.wait(0.05)
+                    VirtualInputManager:SendMouseButtonEvent(center.X, center.Y + inset.Y, 0, false, game, 1)
+                end)
+                return true
+            end
+        end
+    end
+    return false
+end
+
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hum and hrp and hum.Health > 0 then
+            if isAntiRagdollActive() then
+                if hum.PlatformStand then
+                    hum.PlatformStand = false
+                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end
+            end
+
+            if isAntiVoidActive() and not isInsideLobby(hrp) and not voidTPActive then
+                local fallenHeight = workspace.FallenPartsDestroyHeight or -500
+                if hrp.Position.Y <= 323.52 or hrp.Position.Y < fallenHeight + 60 then
+                    hrp.CFrame = voidTargetCF
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    hrp.AssemblyAngularVelocity = Vector3.zero
+                    hum.PlatformStand = false
+                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end
+            end
+
+            if Config.WalkSpeedEnabled then
+                hum.WalkSpeed = Config.WalkSpeed
+                if hum.MoveDirection.Magnitude > 0 then
+                    local dir = hum.MoveDirection
+                    hrp.AssemblyLinearVelocity = Vector3.new(dir.X * Config.WalkSpeed, hrp.AssemblyLinearVelocity.Y, dir.Z * Config.WalkSpeed)
+                end
+            end
+        end
+    end
+end)
+
+RunService.Stepped:Connect(function()
+    if isCombatActive() then
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end)
+
+local function getPlayerNames()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(list, p.Name)
+        end
+    end
+    return list
+end
+
+local npcCache = setmetatable({}, { __mode = "k" })
+
+local function registerNPC(model)
+    if not model or not model:IsA("Model") then return end
+    if model == LocalPlayer.Character then return end
+    if Players:GetPlayerFromCharacter(model) then return end
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    local hrp = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model:FindFirstChild("UpperTorso")
+    if hum and hrp then
+        npcCache[model] = true
+    end
+end
+
+for _, desc in ipairs(workspace:GetDescendants()) do
+    if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
+        registerNPC(desc.Parent)
+    end
+end
+
+workspace.DescendantAdded:Connect(function(desc)
+    if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
+        registerNPC(desc.Parent)
+    elseif desc:IsA("Model") then
+        task.defer(function()
+            registerNPC(desc)
+        end)
+    end
+end)
+
+local function getAutoKillTarget()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local bestTarget = nil
+    local bestDist = math.huge
+
+    local function checkTarget(tChar)
+        if tChar and tChar ~= char and tChar.Parent then
+            local tHum = tChar:FindFirstChildOfClass("Humanoid")
+            local tHrp = tChar:FindFirstChild("HumanoidRootPart") or tChar:FindFirstChild("Torso") or tChar:FindFirstChild("UpperTorso")
+            if tHum and tHrp and tHum.Health > 0 and not isInsideLobby(tHrp) then
+                local dist = (tHrp.Position - hrp.Position).Magnitude
+                if dist < bestDist then
+                    bestDist = dist
+                    bestTarget = tChar
+                end
+            end
+        end
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            checkTarget(player.Character)
+        end
+    end
+
+    return bestTarget
+end
+
+getAutoAttackTarget = function(customRange)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp or isInsideLobby(hrp) then return nil end
+
+    local maxRange = customRange or ((tonumber(Config.AttackDistance) or 7) + 5)
+    local bestTarget = nil
+    local bestDist = maxRange
+
+    local function checkTarget(tChar)
+        if tChar and tChar ~= char and tChar.Parent then
+            local tHum = tChar:FindFirstChildOfClass("Humanoid")
+            local tHrp = tChar:FindFirstChild("HumanoidRootPart") or tChar:FindFirstChild("Torso") or tChar:FindFirstChild("UpperTorso")
+            if tHum and tHrp and tHum.Health > 0 and not isInsideLobby(tHrp) then
+                local dist = (tHrp.Position - hrp.Position).Magnitude
+                if dist <= bestDist then
+                    bestDist = dist
+                    bestTarget = tChar
+                end
+            end
+        end
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            checkTarget(player.Character)
+        end
+    end
+
+    for npc in pairs(npcCache) do
+        checkTarget(npc)
+    end
+
+    return bestTarget
+end
+
+local function executeAttackUnder(target)
+    if not target then return end
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not (char and hrp and hum and hum.Health > 0) then return end
+
+    local tHum = target:FindFirstChildOfClass("Humanoid")
+    local tHrp = target:FindFirstChild("HumanoidRootPart")
+    if tHum and tHrp and tHum.Health > 0 and not isInsideLobby(tHrp) then
+        local targetPos = tHrp.Position
+        local dist = tonumber(Config.AttackDistance) or 7
+        if Config.AttackPosition == "Behind" then
+            local behindPos = targetPos - (tHrp.CFrame.LookVector * dist)
+            hrp.CFrame = CFrame.lookAt(behindPos, targetPos)
+        elseif Config.AttackPosition == "Above" then
+            local abovePos = targetPos + Vector3.new(0, dist, 0)
+            local forward = tHrp.CFrame.LookVector * Vector3.new(1, 0, 1)
+            if forward.Magnitude > 0.01 then
+                forward = forward.Unit
+            else
+                forward = Vector3.new(0, 0, -1)
+            end
+            hrp.CFrame = CFrame.lookAt(abovePos, targetPos, forward)
+        else
+            local underPos = targetPos - Vector3.new(0, dist, 0)
+            local lookPos = targetPos + (tHrp.CFrame.LookVector * 0.1)
+            hrp.CFrame = CFrame.lookAt(underPos, lookPos)
+        end
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+
+        local aid = getPrimaryAbilityId()
+        if aid then
+            doAttack(aid)
+        end
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if not Config.ClickKillPlayer then return end
+    if singleTargetChar ~= nil then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        local mouse = LocalPlayer:GetMouse()
+        local target = mouse and mouse.Target
+        if target then
+            local model = target:FindFirstAncestorOfClass("Model")
+            if model and model ~= LocalPlayer.Character then
+                local plr = Players:GetPlayerFromCharacter(model)
+                if plr then
+                    local hum = model:FindFirstChildOfClass("Humanoid")
+                    local hrp = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model:FindFirstChild("UpperTorso")
+                    if hum and hrp and hum.Health > 0 and not isInsideLobby(hrp) then
+                        singleTargetChar = model
+                        executeAttackUnder(model)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+local mobileAttackHolding = false
+local lastHookedAttackBtn = nil
+local activeAttackTouch = nil
+local cachedAttackBtn = nil
+
+local function getMobileAttackButton()
+    if cachedAttackBtn and cachedAttackBtn.Parent then
+        return cachedAttackBtn
+    end
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:FindFirstChild("PlayerGui")
+    if not pGui then return nil end
+    local mainUI = pGui:FindFirstChild("MainUI")
+    if not mainUI then return nil end
+    local hud = mainUI:FindFirstChild("HUD")
+    if not hud then return nil end
+    local mobileHud = hud:FindFirstChild("MobileHUD")
+    if mobileHud then
+        local btn = mobileHud:FindFirstChild("Attack")
+        if btn then
+            cachedAttackBtn = btn
+            return btn
+        end
+    end
+    local abilities = hud:FindFirstChild("Abilities")
+    local abilityButtons = abilities and abilities:FindFirstChild("AbilityButtons")
+    if abilityButtons then
+        local btn = abilityButtons:FindFirstChild("Attack")
+        if btn then
+            cachedAttackBtn = btn
+            return btn
+        end
+    end
+    return nil
+end
+
+local function hookMobileAttackButton()
+    local btn = getMobileAttackButton()
+    if not btn or btn == lastHookedAttackBtn then return btn end
+    lastHookedAttackBtn = btn
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            mobileAttackHolding = true
+            if Config.FastAttack and LocalPlayer:GetAttribute("InGame") ~= false and not isUsingSkill() then
+                doAttack()
+            end
+        end
+    end)
+    btn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            mobileAttackHolding = false
+            activeAttackTouch = nil
+        end
+    end)
+    return btn
+end
+
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch then
+        local btn = getMobileAttackButton()
+        if btn and btn.Visible then
+            local bPos = btn.AbsolutePosition
+            local bSize = btn.AbsoluteSize
+            local p = input.Position
+            if p.X >= bPos.X and p.X <= (bPos.X + bSize.X) and p.Y >= bPos.Y and p.Y <= (bPos.Y + bSize.Y) then
+                activeAttackTouch = input
+                mobileAttackHolding = true
+                if Config.FastAttack and LocalPlayer:GetAttribute("InGame") ~= false and not isUsingSkill() then
+                    doAttack()
+                end
+            end
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch then
+        if input == activeAttackTouch then
+            activeAttackTouch = nil
+            mobileAttackHolding = false
+        end
+    end
+end)
+
+local function isAttackButtonPressed()
+    local btn = hookMobileAttackButton()
+    if btn and btn.Visible then
+        if mobileAttackHolding then
+            return true
+        end
+        if not UserInputService.TouchEnabled and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+            return true
+        end
+        return false
+    end
+    return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.02)
+        if singleTargetChar ~= nil then
+            local tHum = singleTargetChar:FindFirstChildOfClass("Humanoid")
+            local tHrp = singleTargetChar:FindFirstChild("HumanoidRootPart")
+            if not singleTargetChar.Parent or not tHum or not tHrp or tHum.Health <= 0 or isInsideLobby(tHrp) then
+                singleTargetChar = nil
+            else
+                executeAttackUnder(singleTargetChar)
+            end
+        elseif Config.TargetKill and Config.TargetPlayer and Config.TargetPlayer ~= "" then
+            local targetPlr = Players:FindFirstChild(Config.TargetPlayer)
+            if targetPlr and targetPlr.Character then
+                local tHum = targetPlr.Character:FindFirstChildOfClass("Humanoid")
+                local tHrp = targetPlr.Character:FindFirstChild("HumanoidRootPart")
+                if tHum and tHrp and tHum.Health > 0 and not isInsideLobby(tHrp) then
+                    executeAttackUnder(targetPlr.Character)
+                end
+            end
+        elseif Config.AutoKill then
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if char and hrp then
+                if currentAutoKillChar then
+                    local tHum = currentAutoKillChar:FindFirstChildOfClass("Humanoid")
+                    local tHrp = currentAutoKillChar:FindFirstChild("HumanoidRootPart")
+                    if not currentAutoKillChar.Parent or not tHum or not tHrp or tHum.Health <= 0 or isInsideLobby(tHrp) then
+                        currentAutoKillChar = nil
+                    end
+                end
+                if not currentAutoKillChar then
+                    currentAutoKillChar = getAutoKillTarget()
+                end
+                if currentAutoKillChar then
+                    executeAttackUnder(currentAutoKillChar)
+                else
+                    if isInsideLobby(hrp) then
+                        clickPlayButton()
+                    end
+                end
+            end
+        else
+            if Config.AutoAttack and LocalPlayer:GetAttribute("InGame") ~= false and not isUsingSkill() then
+                local autoTarget = getAutoAttackTarget()
+                if autoTarget then
+                    local tHrp = autoTarget:FindFirstChild("HumanoidRootPart")
+                    local char = LocalPlayer.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp and tHrp then
+                        hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(tHrp.Position.X, hrp.Position.Y, tHrp.Position.Z))
+                    end
+                    doAttack()
+                end
+            end
+            if Config.FastAttack and LocalPlayer:GetAttribute("InGame") ~= false and not isUsingSkill() then
+                local char = LocalPlayer.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health > 0 and isAttackButtonPressed() then
+                    doAttack()
+                end
+            end
+        end
+    end
+end)
+
+local function clearPlayerESP()
+    for _, player in ipairs(Players:GetPlayers()) do
+        local char = player.Character
+        if char then
+            local head = char:FindFirstChild("Head")
+            if head then
+                local esp = head:FindFirstChild("StarCrowESP")
+                if esp then esp:Destroy() end
+            end
+            local chams = char:FindFirstChild("StarCrowChams")
+            if chams then chams:Destroy() end
+        end
+    end
+end
+
+local function updateESP()
+    if not Config.ESPEnabled then return end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char and char:FindFirstChild("Head") and char:FindFirstChild("Humanoid") then
+                local hum = char.Humanoid
+                local head = char.Head
+                local esp = head:FindFirstChild("StarCrowESP")
+                local chams = char:FindFirstChild("StarCrowChams")
+
+                if hum.Health > 0 then
+                    if not esp then
+                        esp = Instance.new("BillboardGui")
+                        esp.Name = "StarCrowESP"
+                        esp.Adornee = head
+                        esp.Size = UDim2.new(0, 240, 0, 40)
+                        esp.StudsOffset = Vector3.new(0, 2.5, 0)
+                        esp.AlwaysOnTop = true
+                        esp.MaxDistance = math.huge
+                        local text = Instance.new("TextLabel")
+                        text.Name = "NameText"
+                        text.Parent = esp
+                        text.Size = UDim2.new(1, 0, 1, 0)
+                        text.BackgroundTransparency = 1
+                        text.TextScaled = false
+                        text.TextSize = 13
+                        text.Font = Enum.Font.GothamBold
+                        text.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        text.TextStrokeTransparency = 0
+                        text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+                        text.RichText = true
+                        text.TextXAlignment = Enum.TextXAlignment.Center
+                        esp.Parent = head
+                    end
+                    
+                    local teamColor = Color3.fromRGB(255, 255, 255)
+                    if player.Team and player.Team.TeamColor then
+                        teamColor = player.Team.TeamColor.Color
+                    end
+                    local nameHex = string.format("#%02x%02x%02x", math.floor(teamColor.R * 255), math.floor(teamColor.G * 255), math.floor(teamColor.B * 255))
+                    
+                    local nameStr = string.format('<font color="%s">%s</font>', nameHex, player.DisplayName)
+                    local hp = math.floor(hum.Health)
+                    local hpPercent = hum.MaxHealth > 0 and (hum.Health / hum.MaxHealth) * 100 or 0
+                    local hpColor = hpPercent > 60 and "#00ff00" or hpPercent > 30 and "#ffaa00" or "#ff3300"
+                    local fullText = nameStr .. "\n" .. string.format('<font color="%s">%d HP</font>', hpColor, hp)
+                    
+                    if esp.NameText.Text ~= fullText then
+                        esp.NameText.Text = fullText
+                    end
+                    
+                    if not chams then
+                        chams = Instance.new("Highlight")
+                        chams.Name = "StarCrowChams"
+                        chams.FillColor = teamColor
+                        chams.OutlineColor = teamColor
+                        chams.FillTransparency = 0.7
+                        chams.OutlineTransparency = 0
+                        chams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        chams.Parent = char
+                    elseif chams.FillColor ~= teamColor then
+                        chams.FillColor = teamColor
+                        chams.OutlineColor = teamColor
+                    end
+                else
+                    if esp then esp:Destroy() end
+                    if chams then chams:Destroy() end
+                end
+            end
+        end
+    end
+end
+
+local espThrottle = 0
+RunService.RenderStepped:Connect(function(dt)
+    if not Config.ESPEnabled then return end
+    espThrottle = espThrottle + dt
+    if espThrottle < 0.1 then return end
+    espThrottle = 0
+    updateESP()
+end)
+
+local touchJumpController = nil
+local hookedJumpButtons = {}
+
+local function performInfJump()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Health > 0 and Config.InfJump then
+            hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end
+
+local function hookJumpButton(btn)
+    if not btn or hookedJumpButtons[btn] then return end
+    hookedJumpButtons[btn] = true
+    local changingVisible = false
+    btn:GetPropertyChangedSignal("Visible"):Connect(function()
+        if changingVisible then return end
+        if Config.InfJump and not btn.Visible then
+            changingVisible = true
+            btn.Visible = true
+            changingVisible = false
+        end
+    end)
+    btn.InputBegan:Connect(function(input)
+        if Config.InfJump and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
+            performInfJump()
+        end
+    end)
+end
+
+local function getTouchControlFrame()
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:FindFirstChild("PlayerGui")
+    if not pGui then return nil end
+    local touchGui = pGui:FindFirstChild("TouchGui")
+    if not touchGui then return nil end
+    return touchGui:FindFirstChild("TouchControlFrame")
+end
+
+local function syncMobileJumpButton()
+    if not Config.InfJump then return end
+    if not touchJumpController then
+        pcall(function()
+            local pScripts = LocalPlayer:FindFirstChildOfClass("PlayerScripts") or LocalPlayer:FindFirstChild("PlayerScripts")
+            if pScripts and pScripts:FindFirstChild("PlayerModule") then
+                local controls = require(pScripts.PlayerModule):GetControls()
+                if controls then
+                    touchJumpController = controls.touchJumpController
+                end
+            end
+        end)
+    end
+    local frame = getTouchControlFrame()
+    if frame then
+        local btn = frame:FindFirstChild("JumpButton")
+        if btn then
+            hookJumpButton(btn)
+            btn.Visible = true
+        end
+    end
+    if touchJumpController then
+        pcall(function()
+            touchJumpController:EnableButton(true)
+            if touchJumpController.jumpButton then
+                touchJumpController.jumpButton.Visible = true
+            end
+        end)
+    end
+end
+
+pcall(function()
+    local pScripts = LocalPlayer:FindFirstChildOfClass("PlayerScripts") or LocalPlayer:WaitForChild("PlayerScripts", 5)
+    if not pScripts then return end
+    local pMod = pScripts:FindFirstChild("PlayerModule") or pScripts:WaitForChild("PlayerModule", 5)
+    if not pMod then return end
+    local cMod = pMod:FindFirstChild("ControlModule") or pMod:WaitForChild("ControlModule", 5)
+    if not cMod then return end
+    local tjMod = cMod:FindFirstChild("TouchJump") or cMod:WaitForChild("TouchJump", 5)
+    if not tjMod then return end
+    local TouchJumpClass = require(tjMod)
+
+    local oldUpdate = TouchJumpClass.UpdateEnabled
+    TouchJumpClass.UpdateEnabled = function(self, ...)
+        if Config.InfJump then
+            self:EnableButton(true)
+            if self.jumpButton then
+                self.jumpButton.Visible = true
+                hookJumpButton(self.jumpButton)
+            end
+            return
+        end
+        return oldUpdate(self, ...)
+    end
+
+    local oldEnableBtn = TouchJumpClass.EnableButton
+    TouchJumpClass.EnableButton = function(self, enabled, ...)
+        if Config.InfJump and not enabled then
+            if not self.jumpButton then
+                self:Create()
+            end
+            if self.jumpButton then
+                self.jumpButton.Visible = true
+                hookJumpButton(self.jumpButton)
+            end
+            return
+        end
+        local res = oldEnableBtn(self, enabled, ...)
+        if self.jumpButton then
+            hookJumpButton(self.jumpButton)
+        end
+        return res
+    end
+
+    local oldCreate = TouchJumpClass.Create
+    TouchJumpClass.Create = function(self, ...)
+        local res = oldCreate(self, ...)
+        if self.jumpButton then
+            hookJumpButton(self.jumpButton)
+            if Config.InfJump then
+                self.jumpButton.Visible = true
+            end
+        end
+        return res
+    end
+
+    local controls = require(pMod):GetControls()
+    if controls then
+        touchJumpController = controls.touchJumpController or controls.controllers[TouchJumpClass]
+    end
+end)
+
+pcall(function()
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5)
+    if not pGui then return end
+    local function watchTouchGui(tg)
+        local frame = tg:FindFirstChild("TouchControlFrame") or tg:WaitForChild("TouchControlFrame", 5)
+        if frame then
+            local btn = frame:FindFirstChild("JumpButton")
+            if btn then
+                hookJumpButton(btn)
+                if Config.InfJump then btn.Visible = true end
+            end
+            frame.ChildAdded:Connect(function(child)
+                if child.Name == "JumpButton" then
+                    hookJumpButton(child)
+                    if Config.InfJump then child.Visible = true end
+                end
+            end)
+        end
+    end
+    local existingTG = pGui:FindFirstChild("TouchGui")
+    if existingTG then
+        watchTouchGui(existingTG)
+    end
+    pGui.ChildAdded:Connect(function(child)
+        if child.Name == "TouchGui" then
+            watchTouchGui(child)
+        end
+    end)
+end)
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    cachedPrimaryAbilityId = nil
+    lastMovesetName = nil
+    cachedAttackBtn = nil
+    cachedAnimator = nil
+    cachedCharacter = nil
+    activeSkillTrack = nil
+    currentSkillEndTime = 0
+    lastSkillUseTick = 0
+    voidTPActive = false
+    voidTPSafeCF = nil
+    table.clear(punchAbilityCache)
+    if DashControllerMod then
+        if Config.DashNoCooldown then
+            resetDashState(DashControllerMod)
+        elseif restoreAllDash then
+            restoreAllDash()
+        end
+    end
+    if Config.InfJump then
+        task.defer(function()
+            syncMobileJumpButton()
+            local hum = char:WaitForChild("Humanoid", 3)
+            if hum then
+                hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+            end
+        end)
+    end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    performInfJump()
+end)
+
+task.spawn(function()
+    task.wait(1)
+    if Config.InfJump then
+        syncMobileJumpButton()
+    end
+end)
+
+
+local LogoGui = Instance.new("ScreenGui")
+LogoGui.Name = "StarCrowLogoGui"
+LogoGui.ResetOnSpawn = false
+LogoGui.DisplayOrder = 10000
+pcall(function() LogoGui.Parent = game:GetService("CoreGui") end)
+if not LogoGui.Parent then LogoGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+local LogoFrame = Instance.new("Frame")
+LogoFrame.Size = UDim2.new(0, 46, 0, 46)
+LogoFrame.Position = UDim2.new(0, 8, 0.5, -23)
+LogoFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+LogoFrame.BorderSizePixel = 0
+LogoFrame.Parent = LogoGui
+Instance.new("UICorner", LogoFrame).CornerRadius = UDim.new(0.2, 0)
+
+local logoStroke = Instance.new("UIStroke", LogoFrame)
+logoStroke.Thickness = 1.8
+logoStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+local logoGrad = Instance.new("UIGradient", logoStroke)
+logoGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 78, 18)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 215, 110)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(160, 112, 32)),
+})
+task.spawn(function() TweenService:Create(logoGrad, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Rotation = 180}):Play() end)
+
+local LogoImg = Instance.new("TextLabel")
+LogoImg.Size = UDim2.new(1, -4, 1, -4)
+LogoImg.Position = UDim2.new(0, 2, 0, 2)
+LogoImg.BackgroundTransparency = 1
+LogoImg.Text = "𝓐"
+LogoImg.TextColor3 = Color3.fromRGB(255, 215, 110)
+LogoImg.TextSize = 29
+LogoImg.Font = Enum.Font.GothamBlack
+LogoImg.TextXAlignment = Enum.TextXAlignment.Center
+LogoImg.TextYAlignment = Enum.TextYAlignment.Center
+LogoImg.Parent = LogoFrame
+
+local LogoBtn = Instance.new("TextButton")
+LogoBtn.Size = UDim2.new(1, 0, 1, 0)
+LogoBtn.BackgroundTransparency = 1
+LogoBtn.Text = ""
+LogoBtn.ZIndex = 5
+LogoBtn.Parent = LogoFrame
+
+do
+    local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
+    LogoBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging, dragInput, dragStart, startPos = true, input, input.Position, LogoFrame.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            LogoFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+            dragInput = nil
+        end
+    end)
+end
+
+local function makeDraggableFloat(b, posKey)
+    local dragging, moved, startPos, startBtnPos, activeInput = false, false, nil, nil, nil
+    b.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging, moved, startPos, startBtnPos, activeInput = true, false, input.Position, b.Position, input
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    activeInput = nil
+                    if moved and posKey then
+                        local p = b.Position
+                        Config[posKey] = { xs = p.X.Scale, xo = p.X.Offset, ys = p.Y.Scale, yo = p.Y.Offset }
+                        SaveConfig()
+                    end
+                end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input == activeInput or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local delta = input.Position - startPos
+            if delta.Magnitude > 6 then moved = true end
+            b.Position = UDim2.new(startBtnPos.X.Scale, startBtnPos.X.Offset + delta.X, startBtnPos.Y.Scale, startBtnPos.Y.Offset + delta.Y)
+        end
+    end)
+    return function() return moved end, function() moved = false end
+end
+
+local function setFloatStrokeActive(stroke, active)
+    if not stroke then return end
+    local oldGradient = stroke:FindFirstChildOfClass("UIGradient")
+    if oldGradient then oldGradient:Destroy() end
+    local gradient = Instance.new("UIGradient")
+    if active then
+        stroke.Color = Color3.fromRGB(255, 215, 110)
+        stroke.Thickness = 2.2
+        gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(145, 95, 25)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 220, 125)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(145, 95, 25)),
+        })
+        gradient.Parent = stroke
+        task.spawn(function()
+            TweenService:Create(gradient, TweenInfo.new(3, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1), { Rotation = 360 }):Play()
+        end)
+    else
+        stroke.Color = Color3.fromRGB(180, 132, 48)
+        stroke.Thickness = 1.6
+        gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(95, 65, 20)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(205, 160, 65)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(95, 65, 20)),
+        })
+        gradient.Parent = stroke
+        task.spawn(function()
+            TweenService:Create(gradient, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Rotation = 180 }):Play()
+        end)
+    end
+end
+
+local function getAimlockTarget()
+    Camera = workspace.CurrentCamera
+    if not Camera then return nil end
+    local camPos = Camera.CFrame.Position
+    local camLook = Camera.CFrame.LookVector
+    local bestTarget = nil
+    local bestScore = -math.huge
+
+    local function checkTarget(tChar)
+        if tChar and tChar ~= LocalPlayer.Character and tChar.Parent and not isInsideLobby(tChar) then
+            local tHum = tChar:FindFirstChildOfClass("Humanoid")
+            local tHrp = tChar:FindFirstChild("HumanoidRootPart") or tChar:FindFirstChild("Torso") or tChar:FindFirstChild("UpperTorso")
+            if tHum and tHrp and tHum.Health > 0 then
+                local offset = tHrp.Position - camPos
+                local dist = offset.Magnitude
+                if dist > 0 and dist < 2000 then
+                    local dot = camLook:Dot(offset.Unit)
+                    if dot > 0 then
+                        local score = dot * 1000 - dist
+                        if score > bestScore then
+                            bestScore = score
+                            bestTarget = tChar
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            checkTarget(player.Character)
+        end
+    end
+
+    return bestTarget
+end
+
+local function toggleAimlock(state)
+    if state ~= nil then
+        Config.AimlockEnabled = state
+    else
+        Config.AimlockEnabled = not Config.AimlockEnabled
+    end
+    if Config.AimlockEnabled then
+        aimlockTargetChar = getAimlockTarget()
+        if not aimlockTargetChar then
+            Config.AimlockEnabled = false
+        end
+    else
+        aimlockTargetChar = nil
+    end
+    if aimlockFloatBtn then
+        aimlockFloatBtn.Text = Config.AimlockEnabled and "Locked" or "Aim"
+    end
+    if aimlockFloatStroke then
+        setFloatStrokeActive(aimlockFloatStroke, Config.AimlockEnabled)
+    end
+end
+
+local fPos = Config.AimlockFloatPos or { xs = 0.85, xo = 0, ys = 0.5, yo = 0 }
+local fSize = tonumber(Config.FloatSize) or 46
+aimlockFloatBtn = Instance.new("TextButton")
+aimlockFloatBtn.Size = UDim2.new(0, fSize, 0, fSize)
+aimlockFloatBtn.Position = UDim2.new(fPos.xs, fPos.xo, fPos.ys, fPos.yo)
+aimlockFloatBtn.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+aimlockFloatBtn.BackgroundTransparency = 0.08
+aimlockFloatBtn.BorderSizePixel = 0
+aimlockFloatBtn.Text = "Aim"
+aimlockFloatBtn.TextColor3 = Color3.fromRGB(255, 215, 110)
+aimlockFloatBtn.TextScaled = false
+aimlockFloatBtn.TextSize = 13
+aimlockFloatBtn.Font = Enum.Font.GothamBold
+aimlockFloatBtn.ZIndex = 15
+aimlockFloatBtn.Visible = Config.AimlockFloatVisible == true
+aimlockFloatBtn.Parent = LogoGui
+Instance.new("UICorner", aimlockFloatBtn).CornerRadius = UDim.new(0, 8)
+aimlockFloatStroke = Instance.new("UIStroke", aimlockFloatBtn)
+aimlockFloatStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+setFloatStrokeActive(aimlockFloatStroke, false)
+
+local getFloatMoved, resetFloatMoved = makeDraggableFloat(aimlockFloatBtn, "AimlockFloatPos")
+
+aimlockFloatBtn.MouseButton1Click:Connect(function()
+    if getFloatMoved() then resetFloatMoved() return end
+    toggleAimlock()
+end)
+
+RunService.RenderStepped:Connect(function()
+    if Config.AimlockEnabled and aimlockTargetChar then
+        local tHum = aimlockTargetChar:FindFirstChildOfClass("Humanoid")
+        local tHrp = aimlockTargetChar:FindFirstChild("HumanoidRootPart")
+        if not aimlockTargetChar.Parent or not tHum or not tHrp or tHum.Health <= 0 or isInsideLobby(aimlockTargetChar) then
+            toggleAimlock(false)
+        else
+            local aimPart = aimlockTargetChar:FindFirstChild("Head") or tHrp
+            Camera = Camera or workspace.CurrentCamera
+            if Camera then
+                Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, aimPart.Position)
+            end
+        end
+    end
+end)
+
+local uiVisible = true
+local minimizeKey = Enum.KeyCode.LeftControl
+local lastToggleTime = 0
+local cachedMainHubFrame = nil
+
+local function toggleUI()
+    local now = tick()
+    if now - lastToggleTime < 0.3 then return end
+    lastToggleTime = now
+    uiVisible = not uiVisible
+    if cachedMainHubFrame and cachedMainHubFrame.Parent then
+        cachedMainHubFrame.Visible = uiVisible
+        return
+    end
+    for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
+        if gui:IsA("ScreenGui") then
+            for _, desc in ipairs(gui:GetDescendants()) do
+                if desc:IsA("TextLabel") and (desc.Text == "AURA X HUB" or desc.Text:find("AURA X HUB")) then
+                    local p = desc.Parent
+                    while p and p.Parent ~= gui do p = p.Parent end
+                    if p and p:IsA("Frame") then
+                        cachedMainHubFrame = p
+                        p.Visible = uiVisible
+                        return
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function getAimlockKey()
+    local k = Config.AimlockKeybind or "T"
+    if typeof(k) == "EnumItem" then return k end
+    local name = tostring(k):gsub("Enum%.KeyCode%.", "")
+    return Enum.KeyCode[name] or Enum.KeyCode.T
+end
+
+local vPos = Config.VoidTPFloatPos or { xs = 0.85, xo = 0, ys = 0.6, yo = 0 }
+local vSize = tonumber(Config.FloatSize) or 46
+voidTPFloatBtn = Instance.new("TextButton")
+voidTPFloatBtn.Size = UDim2.new(0, vSize, 0, vSize)
+voidTPFloatBtn.Position = UDim2.new(vPos.xs, vPos.xo, vPos.ys, vPos.yo)
+voidTPFloatBtn.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+voidTPFloatBtn.BackgroundTransparency = 0.08
+voidTPFloatBtn.BorderSizePixel = 0
+voidTPFloatBtn.Text = "Void"
+voidTPFloatBtn.TextColor3 = Color3.fromRGB(255, 215, 110)
+voidTPFloatBtn.TextScaled = false
+voidTPFloatBtn.TextSize = 13
+voidTPFloatBtn.Font = Enum.Font.GothamBold
+voidTPFloatBtn.ZIndex = 15
+voidTPFloatBtn.Visible = Config.VoidTPFloatVisible == true
+voidTPFloatBtn.Parent = LogoGui
+Instance.new("UICorner", voidTPFloatBtn).CornerRadius = UDim.new(0, 8)
+voidTPFloatStroke = Instance.new("UIStroke", voidTPFloatBtn)
+voidTPFloatStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+setFloatStrokeActive(voidTPFloatStroke, false)
+
+local getVoidFloatMoved, resetVoidFloatMoved = makeDraggableFloat(voidTPFloatBtn, "VoidTPFloatPos")
+
+voidTPFloatBtn.MouseButton1Click:Connect(function()
+    if getVoidFloatMoved() then resetVoidFloatMoved() return end
+    triggerVoidTP()
+end)
+
+local function getVoidTPKey()
+    local k = Config.VoidTPKeybind or "G"
+    if typeof(k) == "EnumItem" then return k end
+    local name = tostring(k):gsub("Enum%.KeyCode%.", "")
+    return Enum.KeyCode[name] or Enum.KeyCode.G
+end
+
+local lastVoidTPPress = 0
+local lastAimlockPress = 0
+UserInputService.InputBegan:Connect(function(input, processed)
+    if UserInputService:GetFocusedTextBox() then return end
+    if not processed and input.KeyCode == minimizeKey then
+        uiVisible = not uiVisible
+    end
+    if Config.DisableKeybinds then return end
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == getVoidTPKey() then
+        local now = tick()
+        if now - lastVoidTPPress >= 0.2 then
+            lastVoidTPPress = now
+            triggerVoidTP()
+        end
+    end
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == getAimlockKey() then
+        local now = tick()
+        if now - lastAimlockPress >= 0.2 then
+            lastAimlockPress = now
+            toggleAimlock()
+        end
+    end
+end)
+
+local clickStartPos = Vector2.new()
+LogoBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        clickStartPos = Vector2.new(input.Position.X, input.Position.Y)
+    end
+end)
+LogoBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        local dist = (Vector2.new(input.Position.X, input.Position.Y) - clickStartPos).Magnitude
+        if dist < 10 then
+            toggleUI()
+        end
+    end
+end)
+
+local Window = AuraUI:CreateWindow({
+    Title = "AURA X HUB",
+    SubTitle = " | PREMIUM EDITION",
+    TabWidth = 130,
+    Size = UDim2.fromOffset(460, 400),
+    Acrylic = false,
+    Theme = "Darker",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local Tabs = {
+    Main = Window:AddTab({ Title = "Main", Icon = "home" }),
+    Player = Window:AddTab({ Title = "Player", Icon = "user" }),
+    ESP = Window:AddTab({ Title = "ESP", Icon = "eye" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+}
+
+Tabs.Main:AddSection("Combat")
+
+Tabs.Main:AddToggle("AutoKillToggle", {
+    Title = "Auto Kill",
+    Default = Config.AutoKill,
+    Callback = function(Value)
+        Config.AutoKill = Value
+        if Value then
+            currentAutoKillChar = getAutoKillTarget()
+            if currentAutoKillChar then
+                executeAttackUnder(currentAutoKillChar)
+            else
+                clickPlayButton()
+            end
+        else
+            currentAutoKillChar = nil
+        end
+        SaveConfig()
+    end
+})
+
+Tabs.Main:AddToggle("AutoAttackToggle", {
+    Title = "Auto Attack",
+    Default = Config.AutoAttack,
+    Callback = function(Value)
+        Config.AutoAttack = Value
+        SaveConfig()
+    end
+})
+
+Tabs.Main:AddDropdown("MethodAttackDropdown", {
+    Title = "Method Attack",
+    Values = {"Above", "Under", "Behind"},
+    Default = Config.AttackPosition or "Under",
+    Multi = false,
+    Callback = function(Value)
+        Config.AttackPosition = Value or "Under"
+        SaveConfig()
+    end
+})
+
+Tabs.Main:AddSlider("AttackDistanceSlider", {
+    Title = "Distance",
+    Default = Config.AttackDistance or 7,
+    Min = 1,
+    Max = 9,
+    Rounding = 1,
+    Callback = function(Value)
+        Config.AttackDistance = Value
+        SaveConfig()
+    end
+})
+
+Tabs.Main:AddToggle("FastAttackToggle", {
+    Title = "Fast Attack",
+    Default = Config.FastAttack,
+    Callback = function(Value)
+        Config.FastAttack = Value
+        SaveConfig()
+    end
+})
+
+Tabs.Main:AddToggle("AimlockFloatToggle", {
+    Title = "Aimlock",
+    Default = Config.AimlockFloatVisible,
+    Callback = function(Value)
+        Config.AimlockFloatVisible = Value
+        if aimlockFloatBtn then
+            aimlockFloatBtn.Visible = Value
+        end
+        SaveConfig()
+    end
+})
+
+Tabs.Main:AddToggle("VoidTPFloatToggle", {
+    Title = "Float TP Void",
+    Default = Config.VoidTPFloatVisible,
+    Callback = function(Value)
+        Config.VoidTPFloatVisible = Value
+        if voidTPFloatBtn then
+            voidTPFloatBtn.Visible = Value
+        end
+        SaveConfig()
+    end
+})
+
+Tabs.Main:AddSection("Target")
+
+Tabs.Main:AddToggle("ClickKillPlayerToggle", {
+    Title = "Click Player To Kill",
+    Default = Config.ClickKillPlayer,
+    Callback = function(Value)
+        Config.ClickKillPlayer = Value
+        if not Value then
+            singleTargetChar = nil
+        end
+        SaveConfig()
+    end
+})
+
+local targetDropdown = Tabs.Main:AddDropdown("TargetPlayerDropdown", {
+    Title = "Select Target",
+    Values = getPlayerNames(),
+    Default = Config.TargetPlayer ~= "" and Config.TargetPlayer or nil,
+    Multi = false,
+    Callback = function(Value)
+        Config.TargetPlayer = Value or ""
+        SaveConfig()
+    end
+})
+
+Tabs.Main:AddToggle("TargetKillToggle", {
+    Title = "Kill Selected Player",
+    Default = Config.TargetKill,
+    Callback = function(Value)
+        Config.TargetKill = Value
+        if Value and Config.TargetPlayer and Config.TargetPlayer ~= "" then
+            local targetPlr = Players:FindFirstChild(Config.TargetPlayer)
+            if targetPlr and targetPlr.Character then
+                executeAttackUnder(targetPlr.Character)
+            end
+        end
+        SaveConfig()
+    end
+})
+
+Tabs.Player:AddSection("Movement")
+
+Tabs.Player:AddToggle("DashNoCooldownToggle", {
+    Title = "Dash No Cooldown",
+    Default = Config.DashNoCooldown,
+    Callback = function(Value)
+        Config.DashNoCooldown = Value
+        SaveConfig()
+        if Value then
+            if DashControllerMod then
+                resetDashState(DashControllerMod)
+            end
+        else
+            if restoreAllDash then
+                restoreAllDash()
+            elseif DashControllerMod then
+                restoreDashState(DashControllerMod)
+            end
+        end
+    end
+})
+
+Tabs.Player:AddToggle("WalkSpeedToggle", {
+    Title = "Enable Speed",
+    Default = Config.WalkSpeedEnabled,
+    Callback = function(Value)
+        Config.WalkSpeedEnabled = Value
+        SaveConfig()
+    end
+})
+
+Tabs.Player:AddSlider("WalkSpeedSlider", {
+    Title = "Speed Amount",
+    Default = Config.WalkSpeed,
+    Min = 16,
+    Max = 300,
+    Rounding = 0,
+    Callback = function(Value)
+        Config.WalkSpeed = Value
+        SaveConfig()
+    end
+})
+
+Tabs.Player:AddToggle("InfJumpToggle", {
+    Title = "Infinite Jump",
+    Default = Config.InfJump,
+    Callback = function(Value)
+        Config.InfJump = Value
+        SaveConfig()
+        if Value then
+            syncMobileJumpButton()
+        elseif touchJumpController then
+            pcall(function()
+                touchJumpController:UpdateEnabled()
+            end)
+        end
+    end
+})
+
+Tabs.Player:AddSection("Defense")
+
+Tabs.Player:AddToggle("AntiRagdollToggle", {
+    Title = "Anti Ragdoll",
+    Default = Config.AntiRagdoll,
+    Callback = function(Value)
+        Config.AntiRagdoll = Value
+        SaveConfig()
+    end
+})
+
+Tabs.Player:AddToggle("AntiVoidToggle", {
+    Title = "Anti Void",
+    Default = Config.AntiVoid,
+    Callback = function(Value)
+        Config.AntiVoid = Value
+        SaveConfig()
+    end
+})
+
+Tabs.ESP:AddSection("ESP")
+
+Tabs.ESP:AddToggle("ESPPlayersToggle", {
+    Title = "ESP Players",
+    Default = Config.ESPEnabled,
+    Callback = function(Value)
+        Config.ESPEnabled = Value
+        SaveConfig()
+        if not Value then
+            clearPlayerESP()
+        end
+    end
+})
+
+Tabs.Settings:AddSection("Keybinds")
+
+Tabs.Settings:AddKeybind("ToggleUIKeybind", {
+    Title = "Minimize UI Keybind",
+    Mode = "Toggle",
+    Default = "LeftControl",
+    ChangedCallback = function(NewKey)
+        local keyCode = typeof(NewKey) == "EnumItem" and NewKey or Enum.KeyCode[tostring(NewKey)] or Enum.KeyCode.LeftControl
+        minimizeKey = keyCode
+        Window.MinimizeKey = keyCode
+    end
+})
+
+Tabs.Settings:AddKeybind("AimlockKeybind", {
+    Title = "Aimlock Keybind",
+    Mode = "Toggle",
+    Default = Config.AimlockKeybind or "T",
+    ChangedCallback = function(NewKey)
+        local keyCode = typeof(NewKey) == "EnumItem" and NewKey or Enum.KeyCode[tostring(NewKey):gsub("Enum%.KeyCode%.", "")]
+        if keyCode then
+            Config.AimlockKeybind = keyCode.Name
+            SaveConfig()
+        end
+    end
+})
+
+Tabs.Settings:AddKeybind("VoidTPKeybind", {
+    Title = "Void TP Keybind",
+    Mode = "Toggle",
+    Default = Config.VoidTPKeybind or "G",
+    ChangedCallback = function(NewKey)
+        local keyCode = typeof(NewKey) == "EnumItem" and NewKey or Enum.KeyCode[tostring(NewKey):gsub("Enum%.KeyCode%.", "")]
+        if keyCode then
+            Config.VoidTPKeybind = keyCode.Name
+            SaveConfig()
+        end
+    end
+})
+
+Tabs.Settings:AddToggle("DisableKeybindsToggle", {
+    Title = "Disable Keybinds",
+    Default = Config.DisableKeybinds or false,
+    Callback = function(Value)
+        Config.DisableKeybinds = Value
+        SaveConfig()
+    end
+})
+
+Tabs.Settings:AddSection("Float Buttons")
+
+Tabs.Settings:AddSlider("FloatSizeSlider", {
+    Title = "Float Size",
+    Min = 20,
+    Max = 100,
+    Default = Config.FloatSize or 46,
+    Rounding = 0,
+    Callback = function(Value)
+        Config.FloatSize = Value
+        SaveConfig()
+        if aimlockFloatBtn then
+            aimlockFloatBtn.Size = UDim2.new(0, Value, 0, Value)
+        end
+        if voidTPFloatBtn then
+            voidTPFloatBtn.Size = UDim2.new(0, Value, 0, Value)
+        end
+    end
+})
+
+local function refreshAllPlayerDropdowns()
+    local names = getPlayerNames()
+    if targetDropdown then
+        targetDropdown:SetValues(names)
+    end
+end
+
+Players.PlayerAdded:Connect(function()
+    task.wait(1)
+    refreshAllPlayerDropdowns()
+end)
+
+Players.PlayerRemoving:Connect(function()
+    task.wait(1)
+    refreshAllPlayerDropdowns()
+end)
+
+
+-- AURA X HUB: Black + Gold accent pass (visual-only)
+local function auraGoldTint(color)
+    local h, sat, val = color:ToHSV()
+    if sat > 0.22 and val > 0.22 and (h >= 0.48 and h <= 0.86) then
+        local goldValue = math.clamp(val * 1.08, 0.48, 1)
+        return Color3.fromHSV(0.115, math.clamp(sat * 0.92, 0.48, 0.95), goldValue)
+    end
+    return color
+end
+
+local function applyAuraGoldTheme()
+    local gui = AuraUI and AuraUI.GUI
+    if not gui then return end
+
+    for _, item in ipairs(gui:GetDescendants()) do
+        pcall(function()
+            if item:IsA("GuiObject") then
+                item.BackgroundColor3 = auraGoldTint(item.BackgroundColor3)
+            end
+            if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
+                item.TextStrokeColor3 = auraGoldTint(item.TextStrokeColor3)
+            end
+            if item:IsA("ImageLabel") or item:IsA("ImageButton") then
+                item.ImageColor3 = auraGoldTint(item.ImageColor3)
+            end
+            if item:IsA("UIStroke") then
+                item.Color = auraGoldTint(item.Color)
+            end
+            if item:IsA("UIGradient") then
+                local points = {}
+                for _, point in ipairs(item.Color.Keypoints) do
+                    table.insert(points, ColorSequenceKeypoint.new(point.Time, auraGoldTint(point.Value)))
+                end
+                item.Color = ColorSequence.new(points)
+            end
+        end)
+    end
+end
+
+task.defer(function()
+    task.wait(0.15)
+    applyAuraGoldTheme()
+end)
+
+Window:SelectTab(1)
