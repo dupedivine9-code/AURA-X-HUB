@@ -1,8 +1,8 @@
 
 --========================================================
--- AURA X V6.5 | PREMIUM SHINE EDITION
+-- AURA X V6.6 | PREMIUM SHINE EDITION
 -- Electric Violet | Transparent Glass | Mobile + PC
--- Fixed Header | Diagonal Shine | Live Monitor
+-- Fixed Header | Diagonal Shine | Live Monitor | Player Tools
 --========================================================
 
 local Players = game:GetService("Players")
@@ -948,6 +948,7 @@ end
 
 local Home = createPage("Home")
 local PlayerPage = createPage("Player")
+local ToolsPage = createPage("Tools")
 local Settings = createPage("Settings")
 
 --========================================================
@@ -1017,7 +1018,8 @@ end
 
 createNav("Home","⌂",39)
 createNav("Player","◉",84)
-createNav("Settings","⚙",129)
+createNav("Tools","✦",129)
+createNav("Settings","⚙",174)
 
 new("Frame",Sidebar,{
     Position = UDim2.new(0,10,1,-39),
@@ -1026,7 +1028,7 @@ new("Frame",Sidebar,{
     BackgroundTransparency = .45
 })
 
-local SideFooter = label(Sidebar,"V6.5",8,C.Muted,FONT)
+local SideFooter = label(Sidebar,"V6.6",8,C.Muted,FONT)
 SideFooter.Position = UDim2.new(0,12,1,-31)
 SideFooter.Size = UDim2.new(1,-20,0,18)
 
@@ -1147,6 +1149,204 @@ local ResetMovement = button(PlayerPage,"↺  RESET MOVEMENT")
 ResetMovement.Activated:Connect(function()
     applySpeed(16)
     applyJump(50)
+end)
+
+--========================================================
+-- TOOLS | PLAYER UTILITIES
+--========================================================
+
+section(ToolsPage,"PLAYER TOOLS","Local utilities and player selection")
+hero(ToolsPage,"AURA UTILITIES","Select a player or enable local anti-fling protection.")
+
+local selectedTarget = nil
+
+local targetPanel = new("Frame",ToolsPage,{
+    Size = UDim2.new(1,0,0,118),
+    BackgroundColor3 = C.Surface,
+    BackgroundTransparency = .42,
+    BorderSizePixel = 0
+})
+round(targetPanel,11)
+outline(targetPanel,C.LightPurple,.78)
+
+local targetTitle = label(targetPanel,"TARGET PLAYER",9,C.Muted,BOLD)
+targetTitle.Position = UDim2.fromOffset(10,7)
+targetTitle.Size = UDim2.new(1,-20,0,16)
+
+local targetButton = new("TextButton",targetPanel,{
+    Position = UDim2.fromOffset(8,27),
+    Size = UDim2.new(1,-16,0,30),
+    BackgroundColor3 = C.Surface2,
+    Text = "SELECT PLAYER  ▾",
+    TextColor3 = C.Lavender,
+    TextSize = 10,
+    Font = BOLD,
+    AutoButtonColor = false
+})
+round(targetButton,8)
+outline(targetButton,C.Purple,.55)
+
+local targetList = new("ScrollingFrame",targetPanel,{
+    Position = UDim2.fromOffset(8,61),
+    Size = UDim2.new(1,-16,0,48),
+    BackgroundColor3 = C.Base,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 3,
+    ScrollBarImageColor3 = C.Purple,
+    CanvasSize = UDim2.fromOffset(0,0),
+    Visible = false,
+    ZIndex = 20
+})
+round(targetList,7)
+outline(targetList,C.Purple,.35)
+
+local targetLayout = new("UIListLayout",targetList,{
+    Padding = UDim.new(0,3),
+    SortOrder = Enum.SortOrder.LayoutOrder
+})
+targetLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    targetList.CanvasSize = UDim2.fromOffset(0,targetLayout.AbsoluteContentSize.Y+4)
+end)
+
+local function refreshTargets()
+    for _,child in ipairs(targetList:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+
+    local count = 0
+    for _,candidate in ipairs(Players:GetPlayers()) do
+        if candidate ~= Player then
+            count += 1
+            local option = new("TextButton",targetList,{
+                Size = UDim2.new(1,-6,0,25),
+                BackgroundColor3 = C.Surface,
+                Text = candidate.DisplayName.."  @"..candidate.Name,
+                TextColor3 = C.White,
+                TextSize = 9,
+                Font = FONT,
+                AutoButtonColor = false,
+                LayoutOrder = count
+            })
+            round(option,6)
+            option.Activated:Connect(function()
+                selectedTarget = candidate
+                targetButton.Text = candidate.Name.."  ▾"
+                targetList.Visible = false
+            end)
+        end
+    end
+
+    if count == 0 then
+        targetButton.Text = "NO OTHER PLAYERS"
+    elseif not selectedTarget or not selectedTarget.Parent then
+        targetButton.Text = "SELECT PLAYER  ▾"
+    end
+end
+
+targetButton.Activated:Connect(function()
+    refreshTargets()
+    targetList.Visible = not targetList.Visible
+end)
+
+Players.PlayerAdded:Connect(refreshTargets)
+Players.PlayerRemoving:Connect(function(leaving)
+    if selectedTarget == leaving then
+        selectedTarget = nil
+        targetButton.Text = "SELECT PLAYER  ▾"
+    end
+    refreshTargets()
+end)
+refreshTargets()
+
+local teleportButton = button(ToolsPage,"⌖  TELEPORT TO SELECTED PLAYER")
+teleportButton.Activated:Connect(function()
+    local character = Player.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    local targetCharacter = selectedTarget and selectedTarget.Character
+    local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+    if rootPart and targetRoot then
+        rootPart.CFrame = targetRoot.CFrame * CFrame.new(0,0,4)
+    else
+        targetButton.Text = "PLAYER / CHARACTER UNAVAILABLE"
+        task.delay(1.5,function()
+            if targetButton.Parent then
+                targetButton.Text = selectedTarget and selectedTarget.Name.."  ▾" or "SELECT PLAYER  ▾"
+            end
+        end)
+    end
+end)
+
+local unstickButton = button(ToolsPage,"↺  UNSTICK / RESET VELOCITY")
+unstickButton.Activated:Connect(function()
+    local character = Player.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if rootPart then
+        rootPart.AssemblyLinearVelocity = Vector3.zero
+        rootPart.AssemblyAngularVelocity = Vector3.zero
+    end
+    if humanoid then
+        humanoid.PlatformStand = false
+        humanoid.Sit = false
+        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+    end
+end)
+
+section(ToolsPage,"PROTECTION","Local collision protection against character bumping")
+
+local antiFlingEnabled = false
+local antiFlingOriginals = {}
+
+local function restoreAntiFling()
+    for part,original in pairs(antiFlingOriginals) do
+        if part and part.Parent then
+            part.CanCollide = original
+        end
+    end
+    table.clear(antiFlingOriginals)
+end
+
+local function applyAntiFling()
+    for _,otherPlayer in ipairs(Players:GetPlayers()) do
+        if otherPlayer ~= Player then
+            local character = otherPlayer.Character
+            if character then
+                for _,part in ipairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        if antiFlingOriginals[part] == nil then
+                            antiFlingOriginals[part] = part.CanCollide
+                        end
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end
+    end
+end
+
+toggle(ToolsPage,"Anti-Fling (local collision guard)",function(enabled)
+    antiFlingEnabled = enabled
+    if enabled then
+        applyAntiFling()
+    else
+        restoreAntiFling()
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if antiFlingEnabled then
+        applyAntiFling()
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(leaving)
+    local character = leaving.Character
+    if character then
+        for _,part in ipairs(character:GetDescendants()) do
+            antiFlingOriginals[part] = nil
+        end
+    end
 end)
 
 --========================================================
@@ -1532,4 +1732,4 @@ task.spawn(function()
     menuVisible = true
 end)
 
-print("AURA X V6.5 | PREMIUM SHINE EDITION LOADED")
+print("AURA X V6.6 | PREMIUM SHINE EDITION LOADED")
