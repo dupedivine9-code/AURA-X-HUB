@@ -1411,111 +1411,170 @@ unstickButton.Activated:Connect(function()
     end
 end)
 
-section(ToolsPage,"SURVIVAL","Local character health testing and collision protection")
+section(ToolsPage,"SURVIVAL","Original local health and collision modules")
 
--- Client-side health override for local testing only; server validation can override it.
-local godEnabled = false
-local godConnection = nil
-local godHumanoid = nil
-local godOriginalMax = nil
-local godOriginalHealth = nil
+-- ============================================================
+-- GOD MODE (ported from Touch Fling Gui V2.4)
+-- Client-side health override only; server damage validation may override it.
+-- ============================================================
+local setGod
+do
+    local godOn, godToken, godSaved = false, 0, {}
 
-local function restoreGodMode()
-    godEnabled = false
-    if godConnection then
-        godConnection:Disconnect()
-        godConnection = nil
-    end
-    if godHumanoid and godHumanoid.Parent then
-        godHumanoid.MaxHealth = godOriginalMax or 100
-        godHumanoid.Health = math.min(godOriginalHealth or godHumanoid.MaxHealth, godHumanoid.MaxHealth)
-    end
-    godHumanoid = nil
-    godOriginalMax = nil
-    godOriginalHealth = nil
-end
-
-local function applyGodMode()
-    local character = Player.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-
-    if godHumanoid ~= humanoid then
-        if godHumanoid and godHumanoid.Parent then
-            godHumanoid.MaxHealth = godOriginalMax or 100
+    local function restoreGod()
+        local hum = godSaved.hum
+        if hum and hum.Parent then
+            hum.MaxHealth = godSaved.max or 100
+            hum.Health = hum.MaxHealth
         end
-        godHumanoid = humanoid
-        godOriginalMax = humanoid.MaxHealth
-        godOriginalHealth = humanoid.Health
+        godSaved.hum, godSaved.max = nil, nil
     end
 
-    humanoid.MaxHealth = 1000000
-    humanoid.Health = humanoid.MaxHealth
+    setGod = function(on)
+        godOn = on and true or false
+        godToken += 1
+        local token = godToken
+        if not godOn then restoreGod() return end
+
+        task.spawn(function()
+            while godOn and godToken == token do
+                local character = Player.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if godSaved.hum ~= humanoid then
+                        local maxHealth = humanoid.MaxHealth
+                        godSaved.hum = humanoid
+                        godSaved.max = (maxHealth ~= maxHealth or maxHealth == math.huge) and 100 or maxHealth
+                    end
+                    humanoid.MaxHealth = math.huge
+                    humanoid.Health = math.huge
+                end
+                RunService.Heartbeat:Wait()
+            end
+        end)
+    end
 end
 
 toggle(ToolsPage,"👑 God Mode (client-side test)",function(enabled)
-    godEnabled = enabled
-    if enabled then
-        applyGodMode()
-        godConnection = RunService.Heartbeat:Connect(function()
-            if godEnabled then applyGodMode() end
-        end)
-    else
-        restoreGodMode()
-    end
+    setGod(enabled)
 end)
 
-local antiFlingEnabled = false
-local antiFlingOriginals = {}
+-- ============================================================
+-- ANTI-FLING (ported from Touch Fling Gui V2.4)
+-- Tracks humanoid models, disables local collision, restores original values.
+-- ============================================================
+local antiflingOn = false
+local restoreAntiFling
 
-local function restoreAntiFling()
-    for part,original in pairs(antiFlingOriginals) do
-        if part and part.Parent then
-            part.CanCollide = original
+do
+    local RESCAN_INTERVAL = 2
+    local originals, characterParts, characterConns = {}, {}, {}
+    local removeCharacter
+
+    local function addCharacter(character)
+        if not character or not character:IsA("Model") then return end
+        if character == Player.Character or characterParts[character] then return end
+
+        local parts = {}
+        characterParts[character] = parts
+        local function collect(descendant)
+            if descendant:IsA("BasePart") then parts[#parts + 1] = descendant end
+        end
+        for _, descendant in ipairs(character:GetDescendants()) do collect(descendant) end
+
+        characterConns[character] = {
+            character.DescendantAdded:Connect(collect),
+            character.DescendantRemoving:Connect(function(descendant)
+                if descendant:IsA("BasePart") then
+                    local index = table.find(parts, descendant)
+                    if index then table.remove(parts, index) end
+                    originals[descendant] = nil
+                end
+            end),
+            character.AncestryChanged:Connect(function()
+                if not character.Parent then removeCharacter(character) end
+            end),
+        }
+    end
+
+    removeCharacter = function(character)
+        local connections = characterConns[character]
+        if connections then
+            for index = 1, #connections do connections[index]:Disconnect() end
+            characterConns[character] = nil
+        end
+        local parts = characterParts[character]
+        if parts then
+            for index = 1, #parts do originals[parts[index]] = nil end
+            characterParts[character] = nil
         end
     end
-    table.clear(antiFlingOriginals)
-end
 
-local function applyAntiFling()
-    for _,otherPlayer in ipairs(Players:GetPlayers()) do
-        if otherPlayer ~= Player then
-            local character = otherPlayer.Character
-            if character then
-                for _,part in ipairs(character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if antiFlingOriginals[part] == nil then
-                            antiFlingOriginals[part] = part.CanCollide
-                        end
-                        part.CanCollide = false
-                    end
+    local function enforceAntiFling()
+        for _, parts in pairs(characterParts) do
+            for index = 1, #parts do
+                local part = parts[index]
+                if part.CanCollide then
+                    originals[part] = true
+                    part.CanCollide = false
+                elseif originals[part] == nil then
+                    originals[part] = false
                 end
             end
         end
     end
+
+    restoreAntiFling = function()
+        for part, original in pairs(originals) do
+            if part.Parent and part.CanCollide ~= original then part.CanCollide = original end
+        end
+        table.clear(originals)
+    end
+
+    RunService.Stepped:Connect(function()
+        if antiflingOn then enforceAntiFling() end
+    end)
+
+    for _, descendant in ipairs(workspace:GetDescendants()) do
+        if descendant:IsA("Humanoid") then addCharacter(descendant.Parent) end
+    end
+    workspace.DescendantAdded:Connect(function(descendant)
+        if descendant:IsA("Humanoid") then addCharacter(descendant.Parent) end
+    end)
+
+    task.spawn(function()
+        while true do
+            task.wait(RESCAN_INTERVAL)
+            local dead
+            for character in pairs(characterParts) do
+                if not character.Parent then
+                    dead = dead or {}
+                    dead[#dead + 1] = character
+                end
+            end
+            if dead then
+                for index = 1, #dead do removeCharacter(dead[index]) end
+            end
+            for _, character in ipairs(workspace:GetChildren()) do
+                if character:IsA("Model") and character:FindFirstChildOfClass("Humanoid") then
+                    addCharacter(character)
+                end
+            end
+        end
+    end)
 end
 
-toggle(ToolsPage,"🛡️ Anti-Fling (local collision guard)",function(enabled)
-    antiFlingEnabled = enabled
-    if enabled then applyAntiFling() else restoreAntiFling() end
+toggle(ToolsPage,"🛡️ Anti-Fling (ported local collision guard)",function(enabled)
+    antiflingOn = enabled
+    if not antiflingOn then restoreAntiFling() end
 end)
 
-RunService.Heartbeat:Connect(function()
-    if antiFlingEnabled then applyAntiFling() end
-end)
 
-Players.PlayerRemoving:Connect(function(leaving)
-    local character = leaving.Character
-    if character then
-        for _,part in ipairs(character:GetDescendants()) do
-            antiFlingOriginals[part] = nil
-        end
-    end
-end)
 
 GUI.Destroying:Connect(function()
     stopFollowing()
-    restoreGodMode()
+    setGod(false)
+    antiflingOn = false
     restoreAntiFling()
 end)
 
