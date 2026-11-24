@@ -998,3 +998,373 @@ end)
 unstickButton.Activated:Connect(function()
     selectedTarget = nil
     targetDropdown.Text = "Select Player  ▾"
+end)
+
+Players.PlayerAdded:Connect(refreshTargets)
+Players.PlayerRemoving:Connect(function(leaving)
+    if selectedTarget == leaving then
+        selectedTarget = nil
+        targetDropdown.Text = "Select Player  ▾"
+    end
+    refreshTargets()
+end)
+refreshTargets()
+
+RunService.RenderStepped:Connect(function()
+    if not Gui.Parent or not selectedTarget then return end
+    local targetCharacter = selectedTarget.Character
+    local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+    local myCharacter = Player.Character
+    local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+    if targetRoot and myRoot then
+        myRoot.CFrame = targetRoot.CFrame
+    end
+end)
+
+
+--========================================================
+-- DRAGGING
+--========================================================
+local dragging, dragStart, startPosition = false, nil, nil
+
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPosition = Main.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        Main.Position = UDim2.new(
+            startPosition.X.Scale, startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+--========================================================
+-- CLOSE
+--========================================================
+-- Minimize instead of destroying the interface.
+local menuOpen = true
+local launcher
+
+local function SetMenuOpen(open)
+    menuOpen = open
+    if open then
+        Main.Visible = true
+        Play(Main, .28, {Size = UDim2.fromOffset(
+            UserInputService.TouchEnabled and 350 or 570,
+            UserInputService.TouchEnabled and 320 or 370
+        )}, Enum.EasingStyle.Back)
+        if launcher then
+            Play(launcher, .18, {BackgroundTransparency = .08})
+        end
+    else
+        Play(Main, .22, {Size = UDim2.fromOffset(0, 0)},
+            Enum.EasingStyle.Back, Enum.EasingDirection.In)
+        task.delay(.24, function()
+            if Main.Parent and not menuOpen then Main.Visible = false end
+        end)
+        if launcher then
+            Play(launcher, .18, {BackgroundTransparency = .02})
+        end
+    end
+end
+
+Close.MouseButton1Click:Connect(function()
+    if menuOpen then SetMenuOpen(false) end
+end)
+
+Close.MouseEnter:Connect(function()
+    Play(Close, .15, {BackgroundColor3 = Color3.fromRGB(190, 20, 48)})
+end)
+Close.MouseLeave:Connect(function()
+    Play(Close, .15, {BackgroundColor3 = Color3.fromRGB(100, 15, 33)})
+end)
+
+-- Floating AURA X launcher: tap/click the A emblem to open or minimize the menu.
+launcher = New("TextButton", {
+    Name = "AURA_X_Launcher",
+    AnchorPoint = Vector2.new(0, 0.5),
+    Position = UDim2.new(0, 18, 0.5, 0),
+    Size = UDim2.fromOffset(58, 58),
+    BackgroundColor3 = Color3.fromRGB(65, 5, 22),
+    BackgroundTransparency = .08,
+    BorderSizePixel = 0,
+    Text = "",
+    AutoButtonColor = false,
+    Visible = false,
+    ZIndex = 250
+}, Gui)
+Corner(launcher, 18)
+local launcherStroke = Stroke(launcher, Color3.fromRGB(255, 80, 115), 2, .05)
+Gradient(launcher, {
+    Color3.fromRGB(170, 12, 48),
+    Color3.fromRGB(35, 3, 14),
+    Color3.fromRGB(105, 8, 32)
+}, 135)
+
+local launcherRing = New("Frame", {
+    AnchorPoint = Vector2.new(.5, .5),
+    Position = UDim2.fromScale(.5, .5),
+    Size = UDim2.fromScale(.86, .86),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ZIndex = 251
+}, launcher)
+Corner(launcherRing, 100)
+Stroke(launcherRing, Color3.fromRGB(255, 150, 175), 1.2, .15)
+
+local function LauncherBar(pos, size, rot, color, z)
+    local bar = New("Frame", {
+        AnchorPoint = Vector2.new(.5, .5),
+        Position = pos,
+        Size = size,
+        Rotation = rot,
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        ZIndex = z
+    }, launcher)
+    Corner(bar, 3)
+    return bar
+end
+-- Large, sharp A mark with crimson outer glow and white inner strokes.
+LauncherBar(UDim2.fromScale(.37, .53), UDim2.fromOffset(8, 34), 19,
+    Color3.fromRGB(255, 45, 90), 252)
+LauncherBar(UDim2.fromScale(.63, .53), UDim2.fromOffset(8, 34), -19,
+    Color3.fromRGB(255, 45, 90), 252)
+LauncherBar(UDim2.fromScale(.37, .53), UDim2.fromOffset(3, 29), 19, WHITE, 253)
+LauncherBar(UDim2.fromScale(.63, .53), UDim2.fromOffset(3, 29), -19, WHITE, 253)
+LauncherBar(UDim2.fromScale(.5, .66), UDim2.fromOffset(20, 4), 0,
+    Color3.fromRGB(255, 105, 140), 254)
+
+-- Drag the floating A launcher on touch or mouse; a tap toggles the menu.
+local launcherDragging = false
+local launcherMoved = false
+local launcherStartInput, launcherStartPosition
+local launcherDragInput
+
+launcher.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        launcherDragging = true
+        launcherMoved = false
+        launcherStartInput = input.Position
+        launcherStartPosition = launcher.Position
+        launcherDragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if launcherDragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - launcherStartInput
+        if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then
+            launcherMoved = true
+        end
+        if launcherMoved then
+            launcher.Position = UDim2.new(
+                launcherStartPosition.X.Scale,
+                launcherStartPosition.X.Offset + delta.X,
+                launcherStartPosition.Y.Scale,
+                launcherStartPosition.Y.Offset + delta.Y
+            )
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if launcherDragging and (input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        launcherDragging = false
+        if not launcherMoved then
+            SetMenuOpen(not menuOpen)
+        end
+    end
+end)
+launcher.MouseEnter:Connect(function()
+    Play(launcher, .15, {Size = UDim2.fromOffset(63, 63)})
+end)
+launcher.MouseLeave:Connect(function()
+    Play(launcher, .15, {Size = UDim2.fromOffset(58, 58)})
+end)
+
+--========================================================
+-- MENU AMBIENCE ANIMATIONS
+--========================================================
+task.spawn(function()
+    while Gui.Parent do
+        Play(MainGradient, 5, {Rotation = 65})
+        task.wait(5)
+        if not Gui.Parent then break end
+        Play(MainGradient, 5, {Rotation = 45})
+        task.wait(5)
+    end
+end)
+
+task.spawn(function()
+    while Gui.Parent do
+        Shine.Position = UDim2.new(-.55, 0, -.5, 0)
+        Play(Shine, 1.7, {Position = UDim2.new(1.3, 0, -.5, 0)}, Enum.EasingStyle.Sine)
+        task.wait(3.1)
+    end
+end)
+
+task.spawn(function()
+    while Gui.Parent do
+        LogoShine.Position = UDim2.new(-.5, 0, 0, 0)
+        Play(LogoShine, .9, {Position = UDim2.new(1.4, 0, 0, 0)}, Enum.EasingStyle.Sine)
+        task.wait(2.4)
+    end
+end)
+
+task.spawn(function()
+    while Gui.Parent do
+        Play(LogoBorder, .9, {Color = Color3.fromRGB(255, 190, 205), Transparency = 0})
+        Play(LogoRingStroke, .9, {Transparency = 0})
+        Play(BrandGlow, .9, {Transparency = .35})
+        task.wait(.95)
+        Play(LogoBorder, .9, {Color = RED, Transparency = .35})
+        Play(LogoRingStroke, .9, {Transparency = .5})
+        Play(BrandGlow, .9, {Transparency = .8})
+        task.wait(.95)
+    end
+end)
+
+task.spawn(function()
+    while Gui.Parent do
+        Play(MainBorder, 1.3, {Color = Color3.fromRGB(255, 120, 140), Transparency = .03})
+        task.wait(1.3)
+        Play(MainBorder, 1.3, {Color = Color3.fromRGB(170, 25, 48), Transparency = .4})
+        task.wait(1.3)
+    end
+end)
+
+task.spawn(function()
+    while Gui.Parent do
+        Play(RedGlow, 1.8, {BackgroundTransparency = .58})
+        task.wait(1.8)
+        Play(RedGlow, 1.8, {BackgroundTransparency = .78})
+        task.wait(1.8)
+    end
+end)
+
+--========================================================
+-- ENHANCED HOLLOW PURPLE INTRO
+--========================================================
+local function RunIntro()
+    Play(IntroTitle, .65, {TextTransparency = 0})
+    task.wait(.22)
+    Play(IntroSubtitle, .65, {TextTransparency = 0})
+
+    -- Ambient particles drift toward the center
+    for i, dot in ipairs(Particles) do
+        local targetX = .5 + (math.random(-18, 18) / 100)
+        local targetY = .51 + (math.random(-18, 18) / 100)
+        Play(dot, .85 + math.random() * .5, {
+            Position = UDim2.fromScale(targetX, targetY),
+            BackgroundTransparency = .05,
+            Size = UDim2.fromOffset(4, 4)
+        }, Enum.EasingStyle.Sine)
+    end
+
+    -- Red and Blue gather
+    Play(BlueOrb, 1.05, {
+        Position = UDim2.fromScale(.43, .51),
+        Size = UDim2.fromOffset(82, 82)
+    }, Enum.EasingStyle.Sine)
+    Play(RedOrb, 1.05, {
+        Position = UDim2.fromScale(.57, .51),
+        Size = UDim2.fromOffset(82, 82)
+    }, Enum.EasingStyle.Sine)
+
+    task.wait(1.08)
+
+    -- Fast merge
+    Play(BlueOrb, .28, {
+        Position = UDim2.fromScale(.5, .51),
+        BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(12, 12)
+    }, Enum.EasingStyle.Quad)
+    Play(RedOrb, .28, {
+        Position = UDim2.fromScale(.5, .51),
+        BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(12, 12)
+    }, Enum.EasingStyle.Quad)
+
+    Play(PurpleOrb, .58, {Size = UDim2.fromOffset(130, 130)}, Enum.EasingStyle.Back)
+    Play(PurpleCore, .45, {Size = UDim2.fromScale(.78, .78)}, Enum.EasingStyle.Back)
+
+    -- Charge expanding rings
+    for i, data in ipairs(Rings) do
+        local size = 115 + i * 72
+        Play(data.Frame, .72 + i * .09, {Size = UDim2.fromOffset(size, size)})
+        Play(data.Stroke, .45, {Transparency = .04})
+    end
+
+    -- User-supplied Gojo audio asset
+    pcall(function()
+        Voice:Play()
+    end)
+
+    Play(PurpleOrb, .62, {Size = UDim2.fromOffset(195, 195)}, Enum.EasingStyle.Back)
+    Play(PurpleCore, .5, {Size = UDim2.fromScale(.90, .90)})
+    Play(PurpleText, .4, {TextTransparency = 0})
+
+    -- Small energy particles burst outward
+    for i, dot in ipairs(Particles) do
+        local angle = (math.pi * 2) * (i / #Particles)
+        local radius = math.random(28, 44) / 100
+        Play(dot, .55, {
+            Position = UDim2.fromScale(.5 + math.cos(angle) * radius, .51 + math.sin(angle) * radius),
+            BackgroundTransparency = .1,
+            Size = UDim2.fromOffset(3, 3)
+        }, Enum.EasingStyle.Quad)
+    end
+
+    -- Skip the oversized white-core / full-screen impact ending.
+    -- Keep the existing intro animation, then cleanly fade its elements out.
+    Play(PurpleText, .28, {TextTransparency = 1})
+    Play(IntroTitle, .22, {TextTransparency = 1})
+    Play(IntroSubtitle, .22, {TextTransparency = 1})
+    Play(IntroTag, .30, {TextTransparency = 0})
+    Play(PurpleOrb, .28, {BackgroundTransparency = 1, Size = UDim2.fromOffset(150, 150)})
+    Play(PurpleCore, .22, {BackgroundTransparency = 1})
+    for _, data in ipairs(Rings) do
+        Play(data.Stroke, .22, {Transparency = 1})
+    end
+
+    task.wait(.30)
+    Play(Intro, .38, {BackgroundTransparency = 1})
+    task.wait(.28)
+
+    if Gui.Parent then
+        Main.Visible = true
+        launcher.Visible = true
+        menuOpen = true
+        local mobile = UserInputService.TouchEnabled
+        local width = mobile and 350 or 570
+        local height = mobile and 320 or 370
+        Main.Size = UDim2.fromOffset(0, 0)
+        Play(Main, .75, {Size = UDim2.fromOffset(width, height)}, Enum.EasingStyle.Back)
+        Play(IntroTag, .3, {TextTransparency = 1})
+        Intro:Destroy()
+    end
+end
+
+task.spawn(RunIntro)
+
+print("AURA X | CRIMSON GLASS V8 | COMBAT FEATURES MERGED")
