@@ -1,6 +1,6 @@
 
 --========================================================
--- AURA X V6.7 | PREMIUM SHINE EDITION
+-- AURA X V6.8 | PREMIUM SHINE EDITION
 -- Electric Violet | Transparent Glass | Mobile + PC
 -- Fixed Header | Diagonal Shine | Live Monitor | Player Tools | Follow + Health Test
 --========================================================
@@ -1053,7 +1053,7 @@ new("UIGridLayout",Stats,{
 })
 
 stat(Stats,"INTERFACE","AURA X")
-stat(Stats,"VERSION","V6.6")
+stat(Stats,"VERSION","V6.8")
 
 section(Home,"QUICK CONTROLS","Interface preferences")
 
@@ -1161,10 +1161,11 @@ hero(ToolsPage,"✦ AURA UTILITIES","Select a player or enable local protection 
 local selectedTarget = nil
 
 local targetPanel = new("Frame",ToolsPage,{
-    Size = UDim2.new(1,0,0,118),
+    Size = UDim2.new(1,0,0,78),
     BackgroundColor3 = C.Surface,
     BackgroundTransparency = .42,
-    BorderSizePixel = 0
+    BorderSizePixel = 0,
+    ClipsDescendants = false
 })
 round(targetPanel,11)
 outline(targetPanel,C.LightPurple,.78)
@@ -1175,84 +1176,142 @@ targetTitle.Size = UDim2.new(1,-20,0,16)
 
 local targetButton = new("TextButton",targetPanel,{
     Position = UDim2.fromOffset(8,27),
-    Size = UDim2.new(1,-16,0,30),
+    Size = UDim2.new(1,-16,0,34),
     BackgroundColor3 = C.Surface2,
     Text = "SELECT PLAYER  ▾",
     TextColor3 = C.Lavender,
     TextSize = 10,
     Font = BOLD,
-    AutoButtonColor = false
+    AutoButtonColor = false,
+    ZIndex = 5
 })
 round(targetButton,8)
 outline(targetButton,C.Purple,.55)
 
+local targetSearch = new("TextBox",targetPanel,{
+    Position = UDim2.fromOffset(8,68),
+    Size = UDim2.new(1,-16,0,30),
+    BackgroundColor3 = C.Base,
+    Text = "",
+    PlaceholderText = "Search username / display name...",
+    PlaceholderColor3 = C.Muted,
+    TextColor3 = C.White,
+    TextSize = 9,
+    Font = FONT,
+    ClearTextOnFocus = false,
+    Visible = false,
+    ZIndex = 25
+})
+round(targetSearch,7)
+outline(targetSearch,C.LightPurple,.65)
+
 local targetList = new("ScrollingFrame",targetPanel,{
-    Position = UDim2.fromOffset(8,61),
-    Size = UDim2.new(1,-16,0,48),
+    Position = UDim2.fromOffset(8,103),
+    Size = UDim2.new(1,-16,0,116),
     BackgroundColor3 = C.Base,
     BorderSizePixel = 0,
-    ScrollBarThickness = 3,
+    ScrollBarThickness = 4,
     ScrollBarImageColor3 = C.Purple,
     CanvasSize = UDim2.fromOffset(0,0),
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    ScrollingDirection = Enum.ScrollingDirection.Y,
     Visible = false,
-    ZIndex = 20
+    ZIndex = 24
 })
 round(targetList,7)
 outline(targetList,C.Purple,.35)
 
 local targetLayout = new("UIListLayout",targetList,{
-    Padding = UDim.new(0,3),
+    Padding = UDim.new(0,4),
     SortOrder = Enum.SortOrder.LayoutOrder
 })
-targetLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    targetList.CanvasSize = UDim2.fromOffset(0,targetLayout.AbsoluteContentSize.Y+4)
-end)
+new("UIPadding",targetList,{
+    PaddingTop = UDim.new(0,5),
+    PaddingBottom = UDim.new(0,5),
+    PaddingLeft = UDim.new(0,5),
+    PaddingRight = UDim.new(0,5)
+})
 
 local function refreshTargets()
     for _,child in ipairs(targetList:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
 
+    local query = string.lower(targetSearch.Text or "")
     local count = 0
+
     for _,candidate in ipairs(Players:GetPlayers()) do
         if candidate ~= Player then
-            count += 1
-            local option = new("TextButton",targetList,{
-                Size = UDim2.new(1,-6,0,25),
-                BackgroundColor3 = C.Surface,
-                Text = candidate.DisplayName.."  @"..candidate.Name,
-                TextColor3 = C.White,
-                TextSize = 9,
-                Font = FONT,
-                AutoButtonColor = false,
-                LayoutOrder = count
-            })
-            round(option,6)
-            option.Activated:Connect(function()
-                selectedTarget = candidate
-                targetButton.Text = candidate.Name.."  ▾"
-                targetList.Visible = false
-            end)
+            local searchable = string.lower(candidate.Name.." "..candidate.DisplayName)
+            if query == "" or string.find(searchable,query,1,true) then
+                count += 1
+                local option = new("TextButton",targetList,{
+                    Size = UDim2.new(1,0,0,31),
+                    BackgroundColor3 = C.Surface,
+                    Text = "  ◉  "..candidate.DisplayName.."  @"..candidate.Name,
+                    TextColor3 = C.White,
+                    TextSize = 9,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Font = FONT,
+                    AutoButtonColor = false,
+                    LayoutOrder = count,
+                    ZIndex = 25
+                })
+                round(option,6)
+                outline(option,C.LightPurple,.85,.7)
+                option.Activated:Connect(function()
+                    selectedTarget = candidate
+                    targetButton.Text = "✓  "..candidate.DisplayName.."  ▾"
+                    targetList.Visible = false
+                    targetSearch.Visible = false
+                    targetPanel.Size = UDim2.new(1,0,0,78)
+                    targetSearch.Text = ""
+                end)
+            end
         end
     end
 
     if count == 0 then
-        targetButton.Text = "NO OTHER PLAYERS"
-    elseif not selectedTarget or not selectedTarget.Parent then
-        targetButton.Text = "SELECT PLAYER  ▾"
+        local empty = new("TextLabel",targetList,{
+            Size = UDim2.new(1,0,0,30),
+            BackgroundTransparency = 1,
+            Text = query == "" and "No other players in this server" or "No matching players",
+            TextColor3 = C.Muted,
+            TextSize = 9,
+            Font = FONT,
+            ZIndex = 25
+        })
     end
+
+    targetList.CanvasPosition = Vector2.zero
 end
 
 targetButton.Activated:Connect(function()
-    refreshTargets()
-    targetList.Visible = not targetList.Visible
+    local opening = not targetList.Visible
+    if opening then
+        targetPanel.Size = UDim2.new(1,0,0,230)
+        targetSearch.Visible = true
+        targetList.Visible = true
+        refreshTargets()
+        targetSearch:CaptureFocus()
+    else
+        targetPanel.Size = UDim2.new(1,0,0,78)
+        targetSearch.Visible = false
+        targetList.Visible = false
+    end
 end)
+
+targetSearch:GetPropertyChangedSignal("Text"):Connect(refreshTargets)
 
 Players.PlayerAdded:Connect(refreshTargets)
 Players.PlayerRemoving:Connect(function(leaving)
     if selectedTarget == leaving then
         selectedTarget = nil
         targetButton.Text = "SELECT PLAYER  ▾"
+        if followEnabled then
+            followEnabled = false
+            if followConnection then followConnection:Disconnect() followConnection=nil end
+        end
     end
     refreshTargets()
 end)
@@ -1280,21 +1339,15 @@ followButton.Activated:Connect(function()
 
     if not selectedTarget or not selectedTarget.Parent then
         targetButton.Text = "SELECT A PLAYER FIRST"
-        task.delay(1.4,function()
-            if targetButton.Parent then targetButton.Text = "SELECT PLAYER  ▾" end
-        end)
         return
     end
 
     followEnabled = true
     followButton.Text = "🎯  STICK TO PLAYER: ON"
-    followConnection = RunService.RenderStepped:Connect(function()
+    local moveTimer = 0
+
+    followConnection = RunService.Heartbeat:Connect(function(dt)
         if not followEnabled then return end
-        local targetCharacter = selectedTarget and selectedTarget.Character
-        local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
-        local myCharacter = Player.Character
-        local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
-        local myHumanoid = myCharacter and myCharacter:FindFirstChildOfClass("Humanoid")
 
         if not selectedTarget or not selectedTarget.Parent then
             stopFollowing()
@@ -1302,10 +1355,27 @@ followButton.Activated:Connect(function()
             return
         end
 
-        if targetRoot and myRoot and myHumanoid and myHumanoid.Health > 0 then
-            myRoot.CFrame = targetRoot.CFrame * CFrame.new(0,0,3.5)
-            myRoot.AssemblyLinearVelocity = Vector3.zero
-            myRoot.AssemblyAngularVelocity = Vector3.zero
+        local targetCharacter = selectedTarget.Character
+        local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+        local myCharacter = Player.Character
+        local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+        local myHumanoid = myCharacter and myCharacter:FindFirstChildOfClass("Humanoid")
+
+        if not targetRoot or not myRoot or not myHumanoid or myHumanoid.Health <= 0 then
+            return
+        end
+
+        moveTimer += dt
+        if moveTimer >= 0.12 then
+            moveTimer = 0
+            local desiredPosition = targetRoot.Position - targetRoot.CFrame.LookVector * 3.5
+            local offset = desiredPosition - myRoot.Position
+
+            if offset.Magnitude > 2.5 then
+                myHumanoid:MoveTo(desiredPosition)
+            else
+                myHumanoid:Move(Vector3.zero,false)
+            end
         end
     end)
 end)
@@ -1839,4 +1909,4 @@ task.spawn(function()
     menuVisible = true
 end)
 
-print("AURA X V6.7 | PREMIUM SHINE EDITION LOADED")
+print("AURA X V6.8 | PREMIUM SHINE EDITION LOADED")
