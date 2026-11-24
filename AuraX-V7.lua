@@ -1326,9 +1326,30 @@ local dropBtn = new("TextButton",tpCard,{
 round(dropBtn,8)
 outline(dropBtn,C.Purple,.55)
 
-local scrollList = new("ScrollingFrame",tpCard,{
+local searchBox = new("TextBox",tpCard,{
     Position = UDim2.fromOffset(10,72),
-    Size = UDim2.new(1,-20,0,104),
+    Size = UDim2.new(1,-20,0,24),
+    BackgroundColor3 = C.Base,
+    BackgroundTransparency = .15,
+    Text = "",
+    PlaceholderText = "Search username or display name...",
+    PlaceholderColor3 = C.Muted,
+    TextColor3 = C.White,
+    Font = BOLD,
+    TextSize = 9,
+    ClearTextOnFocus = false,
+    TextXAlignment = Enum.TextXAlignment.Left
+})
+round(searchBox,7)
+outline(searchBox,C.Purple,.5)
+new("UIPadding",searchBox,{
+    PaddingLeft = UDim.new(0,8),
+    PaddingRight = UDim.new(0,8)
+})
+
+local scrollList = new("ScrollingFrame",tpCard,{
+    Position = UDim2.fromOffset(10,102),
+    Size = UDim2.new(1,-20,0,112),
     BackgroundColor3 = C.Base,
     BackgroundTransparency = .25,
     BorderSizePixel = 0,
@@ -1359,7 +1380,8 @@ end)
 local function setDropdownOpen(open)
     tpOpen = open
     scrollList.Visible = open
-    local targetHeight = open and 186 or 76
+    searchBox.Visible = open
+    local targetHeight = open and 224 or 76
     if animationEnabled then
         tw(tpCard,.22,{Size = UDim2.new(1,0,0,targetHeight)})
     else
@@ -1375,6 +1397,9 @@ stopBtn.Activated:Connect(function()
     currentTarget = nil
     stopBtn.Visible = false
     dropBtn.Text = "Select Player... ▾"
+    trackStatus.Text = "TRACKER: Follow stopped"
+    trackStatus.TextColor3 = C.Muted
+    updatePlayerList()
 end)
 
 local function updatePlayerList()
@@ -1382,40 +1407,80 @@ local function updatePlayerList()
         if child:IsA("TextButton") then child:Destroy() end
     end
 
+    local query = string.lower(searchBox.Text or "")
+    local matches = 0
+
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= Player then
-            local btn = new("TextButton",scrollList,{
-                Size = UDim2.new(1,0,0,26),
-                BackgroundColor3 = C.Surface,
-                BackgroundTransparency = .35,
-                TextColor3 = C.White,
-                Font = FONT,
-                TextSize = 10,
-                Text = "  " .. p.Name,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                AutoButtonColor = false
-            })
-            round(btn,6)
+            local username = string.lower(p.Name)
+            local displayName = string.lower(p.DisplayName)
+            if query == "" or string.find(username,query,1,true) or string.find(displayName,query,1,true) then
+                matches += 1
+                local selected = currentTarget == p
+                local btn = new("TextButton",scrollList,{
+                    Size = UDim2.new(1,0,0,30),
+                    BackgroundColor3 = selected and C.Purple or C.Surface,
+                    BackgroundTransparency = selected and .12 or .35,
+                    TextColor3 = C.White,
+                    Font = FONT,
+                    TextSize = 9,
+                    Text = "  "..p.DisplayName.."  @"..p.Name,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    AutoButtonColor = false
+                })
+                round(btn,6)
 
-            btn.Activated:Connect(function()
-                currentTarget = p
-                stopBtn.Visible = true
-                setDropdownOpen(false)
-
-                local shortName = #p.Name > 16 and string.sub(p.Name, 1, 14) .. ".." or p.Name
-                dropBtn.Text = shortName .. " ▾"
-            end)
+                btn.Activated:Connect(function()
+                    currentTarget = p
+                    stopBtn.Visible = true
+                    setDropdownOpen(false)
+                    local shortName = #p.Name > 16 and string.sub(p.Name,1,14)..".." or p.Name
+                    dropBtn.Text = shortName.." ▾"
+                    updatePlayerList()
+                end)
+            end
         end
+    end
+
+    if matches == 0 then
+        local empty = label(scrollList,"No matching players",9,C.Muted,FONT)
+        empty.Size = UDim2.new(1,0,0,28)
     end
 end
 
-RunService.RenderStepped:Connect(function()
+searchBox:GetPropertyChangedSignal("Text"):Connect(updatePlayerList)
+
+local trackStatus = label(CombatPage,"TRACKER: No target selected",9,C.Muted,FONT)
+trackStatus.Size = UDim2.new(1,0,0,20)
+trackStatus.TextXAlignment = Enum.TextXAlignment.Left
+
+local trackerAccumulator = 0
+RunService.RenderStepped:Connect(function(dt)
     if not GUI.Parent then return end
-    if currentTarget and currentTarget.Character and currentTarget.Character:FindFirstChild("HumanoidRootPart") then
-        local myChar = Player.Character
-        if myChar and myChar:FindFirstChild("HumanoidRootPart") then
-            myChar.HumanoidRootPart.CFrame = currentTarget.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 0)
+
+    local target = currentTarget
+    local targetChar = target and target.Character
+    local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+    local targetHum = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+    local myChar = Player.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+    if target and target.Parent == Players and targetRoot and myRoot then
+        -- Exact-position follow: keep the local character at the selected target's root.
+        myChar:PivotTo(targetChar:GetPivot())
+
+        trackerAccumulator += dt
+        if trackerAccumulator >= .15 then
+            trackerAccumulator = 0
+            local distance = (myRoot.Position-targetRoot.Position).Magnitude
+            local hp = targetHum and math.floor(targetHum.Health) or 0
+            local maxHp = targetHum and math.floor(targetHum.MaxHealth) or 0
+            trackStatus.Text = string.format("TRACKING: %s  |  HP %d/%d  |  DIST %.1f",target.DisplayName,hp,maxHp,distance)
+            trackStatus.TextColor3 = C.Green
         end
+    elseif target then
+        trackStatus.Text = "TRACKER: Waiting for "..target.DisplayName.."'s character..."
+        trackStatus.TextColor3 = C.Lavender
     end
 end)
 
@@ -1425,6 +1490,8 @@ Players.PlayerRemoving:Connect(function(p)
         currentTarget = nil
         stopBtn.Visible = false
         dropBtn.Text = "Select Player... ▾"
+        trackStatus.Text = "TRACKER: Target left the server"
+        trackStatus.TextColor3 = C.Red
     end
     updatePlayerList()
 end)
