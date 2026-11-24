@@ -1,8 +1,8 @@
 
 --========================================================
--- AURA X V6.6 | PREMIUM SHINE EDITION
+-- AURA X V6.7 | PREMIUM SHINE EDITION
 -- Electric Violet | Transparent Glass | Mobile + PC
--- Fixed Header | Diagonal Shine | Live Monitor | Player Tools
+-- Fixed Header | Diagonal Shine | Live Monitor | Player Tools | Follow + Health Test
 --========================================================
 
 local Players = game:GetService("Players")
@@ -1018,7 +1018,7 @@ end
 
 createNav("Home","⌂",39)
 createNav("Player","◉",84)
-createNav("Tools","✦",129)
+createNav("Tools","⚡",129)
 createNav("Settings","⚙",174)
 
 new("Frame",Sidebar,{
@@ -1053,7 +1053,7 @@ new("UIGridLayout",Stats,{
 })
 
 stat(Stats,"INTERFACE","AURA X")
-stat(Stats,"VERSION","V6.5")
+stat(Stats,"VERSION","V6.6")
 
 section(Home,"QUICK CONTROLS","Interface preferences")
 
@@ -1155,8 +1155,8 @@ end)
 -- TOOLS | PLAYER UTILITIES
 --========================================================
 
-section(ToolsPage,"PLAYER TOOLS","Local utilities and player selection")
-hero(ToolsPage,"AURA UTILITIES","Select a player or enable local anti-fling protection.")
+section(ToolsPage,"✦ PLAYER TOOLS","Local utilities and player selection")
+hero(ToolsPage,"✦ AURA UTILITIES","Select a player or enable local protection tools.")
 
 local selectedTarget = nil
 
@@ -1169,7 +1169,7 @@ local targetPanel = new("Frame",ToolsPage,{
 round(targetPanel,11)
 outline(targetPanel,C.LightPurple,.78)
 
-local targetTitle = label(targetPanel,"TARGET PLAYER",9,C.Muted,BOLD)
+local targetTitle = label(targetPanel,"🎯  TARGET PLAYER",9,C.Muted,BOLD)
 targetTitle.Position = UDim2.fromOffset(10,7)
 targetTitle.Size = UDim2.new(1,-20,0,16)
 
@@ -1258,27 +1258,75 @@ Players.PlayerRemoving:Connect(function(leaving)
 end)
 refreshTargets()
 
-local teleportButton = button(ToolsPage,"⌖  TELEPORT TO SELECTED PLAYER")
+-- TARGET ACTIONS
+local followEnabled = false
+local followConnection = nil
+
+local function stopFollowing()
+    followEnabled = false
+    if followConnection then
+        followConnection:Disconnect()
+        followConnection = nil
+    end
+end
+
+local followButton = button(ToolsPage,"🎯  STICK TO SELECTED PLAYER: OFF")
+followButton.Activated:Connect(function()
+    if followEnabled then
+        stopFollowing()
+        followButton.Text = "🎯  STICK TO SELECTED PLAYER: OFF"
+        return
+    end
+
+    if not selectedTarget or not selectedTarget.Parent then
+        targetButton.Text = "SELECT A PLAYER FIRST"
+        task.delay(1.4,function()
+            if targetButton.Parent then targetButton.Text = "SELECT PLAYER  ▾" end
+        end)
+        return
+    end
+
+    followEnabled = true
+    followButton.Text = "🎯  STICK TO PLAYER: ON"
+    followConnection = RunService.RenderStepped:Connect(function()
+        if not followEnabled then return end
+        local targetCharacter = selectedTarget and selectedTarget.Character
+        local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+        local myCharacter = Player.Character
+        local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+        local myHumanoid = myCharacter and myCharacter:FindFirstChildOfClass("Humanoid")
+
+        if not selectedTarget or not selectedTarget.Parent then
+            stopFollowing()
+            followButton.Text = "🎯  STICK TO SELECTED PLAYER: OFF"
+            return
+        end
+
+        if targetRoot and myRoot and myHumanoid and myHumanoid.Health > 0 then
+            myRoot.CFrame = targetRoot.CFrame * CFrame.new(0,0,3.5)
+            myRoot.AssemblyLinearVelocity = Vector3.zero
+            myRoot.AssemblyAngularVelocity = Vector3.zero
+        end
+    end)
+end)
+
+local teleportButton = button(ToolsPage,"📍  TELEPORT ONCE TO SELECTED PLAYER")
 teleportButton.Activated:Connect(function()
     local character = Player.Character
     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
     local targetCharacter = selectedTarget and selectedTarget.Character
     local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
-
     if rootPart and targetRoot then
         rootPart.CFrame = targetRoot.CFrame * CFrame.new(0,0,4)
     else
         targetButton.Text = "PLAYER / CHARACTER UNAVAILABLE"
-        task.delay(1.5,function()
-            if targetButton.Parent then
-                targetButton.Text = selectedTarget and selectedTarget.Name.."  ▾" or "SELECT PLAYER  ▾"
-            end
-        end)
     end
 end)
 
 local unstickButton = button(ToolsPage,"↺  UNSTICK / RESET VELOCITY")
 unstickButton.Activated:Connect(function()
+    stopFollowing()
+    followButton.Text = "🎯  STICK TO SELECTED PLAYER: OFF"
     local character = Player.Character
     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -1293,7 +1341,59 @@ unstickButton.Activated:Connect(function()
     end
 end)
 
-section(ToolsPage,"PROTECTION","Local collision protection against character bumping")
+section(ToolsPage,"SURVIVAL","Local character health testing and collision protection")
+
+-- Client-side health override for local testing only; server validation can override it.
+local godEnabled = false
+local godConnection = nil
+local godHumanoid = nil
+local godOriginalMax = nil
+local godOriginalHealth = nil
+
+local function restoreGodMode()
+    godEnabled = false
+    if godConnection then
+        godConnection:Disconnect()
+        godConnection = nil
+    end
+    if godHumanoid and godHumanoid.Parent then
+        godHumanoid.MaxHealth = godOriginalMax or 100
+        godHumanoid.Health = math.min(godOriginalHealth or godHumanoid.MaxHealth, godHumanoid.MaxHealth)
+    end
+    godHumanoid = nil
+    godOriginalMax = nil
+    godOriginalHealth = nil
+end
+
+local function applyGodMode()
+    local character = Player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    if godHumanoid ~= humanoid then
+        if godHumanoid and godHumanoid.Parent then
+            godHumanoid.MaxHealth = godOriginalMax or 100
+        end
+        godHumanoid = humanoid
+        godOriginalMax = humanoid.MaxHealth
+        godOriginalHealth = humanoid.Health
+    end
+
+    humanoid.MaxHealth = 1000000
+    humanoid.Health = humanoid.MaxHealth
+end
+
+toggle(ToolsPage,"👑 God Mode (client-side test)",function(enabled)
+    godEnabled = enabled
+    if enabled then
+        applyGodMode()
+        godConnection = RunService.Heartbeat:Connect(function()
+            if godEnabled then applyGodMode() end
+        end)
+    else
+        restoreGodMode()
+    end
+end)
 
 local antiFlingEnabled = false
 local antiFlingOriginals = {}
@@ -1325,19 +1425,13 @@ local function applyAntiFling()
     end
 end
 
-toggle(ToolsPage,"Anti-Fling (local collision guard)",function(enabled)
+toggle(ToolsPage,"🛡️ Anti-Fling (local collision guard)",function(enabled)
     antiFlingEnabled = enabled
-    if enabled then
-        applyAntiFling()
-    else
-        restoreAntiFling()
-    end
+    if enabled then applyAntiFling() else restoreAntiFling() end
 end)
 
 RunService.Heartbeat:Connect(function()
-    if antiFlingEnabled then
-        applyAntiFling()
-    end
+    if antiFlingEnabled then applyAntiFling() end
 end)
 
 Players.PlayerRemoving:Connect(function(leaving)
@@ -1346,6 +1440,19 @@ Players.PlayerRemoving:Connect(function(leaving)
         for _,part in ipairs(character:GetDescendants()) do
             antiFlingOriginals[part] = nil
         end
+    end
+end)
+
+GUI.Destroying:Connect(function()
+    stopFollowing()
+    restoreGodMode()
+    restoreAntiFling()
+end)
+
+Player.CharacterAdded:Connect(function()
+    if godEnabled then
+        task.wait(.2)
+        applyGodMode()
     end
 end)
 
@@ -1732,4 +1839,4 @@ task.spawn(function()
     menuVisible = true
 end)
 
-print("AURA X V6.6 | PREMIUM SHINE EDITION LOADED")
+print("AURA X V6.7 | PREMIUM SHINE EDITION LOADED")
