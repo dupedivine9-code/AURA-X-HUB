@@ -954,6 +954,7 @@ local Home = createPage("Home")
 local CombatPage = createPage("Combat")
 local PlayerPage = createPage("Player")
 local Settings = createPage("Settings")
+local TrackerPage = createPage("Tracker")
 
 --========================================================
 -- NAVIGATION
@@ -1024,6 +1025,7 @@ createNav("Home","⌂",34)
 createNav("Combat","⚡",72)
 createNav("Player","◉",110)
 createNav("Settings","⚙",148)
+createNav("Tracker","⌕",186)
 
 new("Frame",Sidebar,{
     Position = UDim2.new(0,10,1,-36),
@@ -1520,6 +1522,358 @@ ResetMovement.Activated:Connect(function()
     applyJump(50)
 end)
 
+
+--========================================================
+-- TRACKER PAGE | BUILT INTO THE AURA X MENU
+--========================================================
+
+section(TrackerPage,"PLAYER TRACKER","Search Roblox users and inspect public presence/server data")
+hero(TrackerPage,"AURA TRACKER V6","Track player status, public server details, and join using a Job ID.")
+
+local trackerSearch = new("TextBox",TrackerPage,{
+    Size = UDim2.new(1,0,0,40),
+    BackgroundColor3 = C.Surface,
+    BackgroundTransparency = .25,
+    Text = "",
+    PlaceholderText = "Enter Roblox username...",
+    PlaceholderColor3 = C.Muted,
+    TextColor3 = C.White,
+    TextSize = 10,
+    Font = FONT,
+    ClearTextOnFocus = false
+})
+round(trackerSearch,10)
+outline(trackerSearch,C.LightPurple,.65)
+new("UIPadding",trackerSearch,{
+    PaddingLeft = UDim.new(0,11),
+    PaddingRight = UDim.new(0,8)
+})
+
+local trackerSearchBtn = button(TrackerPage,"⌕  SEARCH PLAYER")
+local trackerRefreshRow = new("Frame",TrackerPage,{
+    Size = UDim2.new(1,0,0,40),
+    BackgroundTransparency = 1
+})
+new("UIGridLayout",trackerRefreshRow,{
+    CellSize = UDim2.new(.5,-4,1,0),
+    CellPadding = UDim2.fromOffset(8,0)
+})
+local trackerRefreshBtn = button(trackerRefreshRow,"↻  REFRESH")
+local trackerAutoBtn = button(trackerRefreshRow,"AUTO: OFF")
+
+local trackerStatus = label(TrackerPage,"STATUS: READY",9,C.Muted,BOLD)
+trackerStatus.Size = UDim2.new(1,0,0,22)
+
+local trackerResults = new("Frame",TrackerPage,{
+    Size = UDim2.new(1,0,0,10),
+    BackgroundTransparency = 1,
+    AutomaticSize = Enum.AutomaticSize.Y
+})
+local trackerResultLayout = new("UIListLayout",trackerResults,{
+    Padding = UDim.new(0,6),
+    SortOrder = Enum.SortOrder.LayoutOrder
+})
+trackerResultLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    trackerResults.Size = UDim2.new(1,0,0,trackerResultLayout.AbsoluteContentSize.Y)
+end)
+
+local trackerJobBox = new("TextBox",TrackerPage,{
+    Size = UDim2.new(1,0,0,38),
+    BackgroundColor3 = C.Surface,
+    BackgroundTransparency = .25,
+    Text = "",
+    PlaceholderText = "Paste Job ID to join...",
+    PlaceholderColor3 = C.Muted,
+    TextColor3 = C.White,
+    TextSize = 9,
+    Font = FONT,
+    ClearTextOnFocus = false
+})
+round(trackerJobBox,9)
+outline(trackerJobBox,C.LightPurple,.7)
+new("UIPadding",trackerJobBox,{
+    PaddingLeft = UDim.new(0,10),
+    PaddingRight = UDim.new(0,8)
+})
+
+local trackerJoinBtn = button(TrackerPage,"➜  JOIN BY JOB ID")
+
+local trackerCurrentData
+local trackerBusy = false
+local trackerAuto = false
+local trackerAutoToken = 0
+
+local function trackerSetStatus(message,color)
+    trackerStatus.Text = "STATUS: "..message
+    trackerStatus.TextColor3 = color or C.Muted
+end
+
+local function trackerClearResults()
+    for _,child in ipairs(trackerResults:GetChildren()) do
+        if child ~= trackerResultLayout then child:Destroy() end
+    end
+end
+
+local function trackerInfo(text,color)
+    local card = new("Frame",trackerResults,{
+        Size = UDim2.new(1,0,0,32),
+        BackgroundColor3 = C.Surface,
+        BackgroundTransparency = .35
+    })
+    round(card,8)
+    outline(card,C.LightPurple,.82)
+    local txt = label(card,text,9,color or C.White,FONT)
+    txt.Position = UDim2.fromOffset(9,0)
+    txt.Size = UDim2.new(1,-18,1,0)
+    txt.TextWrapped = true
+    txt.TextXAlignment = Enum.TextXAlignment.Left
+    return card
+end
+
+local function trackerAction(text,callback)
+    local b = button(trackerResults,text)
+    b.Size = UDim2.new(1,0,0,36)
+    b.Activated:Connect(callback)
+    return b
+end
+
+local function trackerRequestFunction()
+    return request or http_request or
+        (syn and syn.request) or
+        (http and http.request)
+end
+
+local function trackerApi(url,method,body)
+    local req = trackerRequestFunction()
+    assert(req,"HTTP request unavailable in this executor")
+    local response = req({
+        Url = url,
+        Method = method or "GET",
+        Headers = {
+            ["Content-Type"] = "application/json",
+            ["Accept"] = "application/json"
+        },
+        Body = body and HttpService:JSONEncode(body) or nil
+    })
+    if not response or response.StatusCode < 200 or response.StatusCode >= 300 then
+        error("HTTP "..tostring(response and response.StatusCode))
+    end
+    return HttpService:JSONDecode(response.Body)
+end
+
+local function trackerCopy(value)
+    local clip = setclipboard or toclipboard or (syn and syn.set_clipboard)
+    if not clip then
+        trackerSetStatus("CLIPBOARD UNAVAILABLE",C.Red)
+        return false
+    end
+    local ok = pcall(function() clip(tostring(value)) end)
+    trackerSetStatus(ok and "COPIED" or "COPY FAILED",ok and C.Green or C.Red)
+    return ok
+end
+
+local function trackerPresence(userId)
+    local data = trackerApi(
+        "https://presence.roblox.com/v1/presence/users",
+        "POST",
+        {userIds={userId}}
+    )
+    return data.userPresences and data.userPresences[1]
+end
+
+local function trackerFindServer(placeId,jobId)
+    for _,sortOrder in ipairs({"Asc","Desc"}) do
+        local cursor
+        for page=1,50 do
+            local url = "https://games.roblox.com/v1/games/"..tostring(placeId)
+                .."/servers/Public?sortOrder="..sortOrder
+                .."&limit=10&excludeFullGames=false"
+            if cursor then url = url.."&cursor="..HttpService:UrlEncode(cursor) end
+            local data = trackerApi(url,"GET")
+            for _,server in ipairs(data.data or {}) do
+                if tostring(server.id)==tostring(jobId) then
+                    local playing,maxPlayers=tonumber(server.playing),tonumber(server.maxPlayers)
+                    if playing and maxPlayers then
+                        return {playing=playing,maxPlayers=maxPlayers,available=math.max(0,maxPlayers-playing)}
+                    end
+                end
+            end
+            cursor=data.nextPageCursor
+            if not cursor or cursor=="" then break end
+            task.wait(.15)
+        end
+    end
+    return nil
+end
+
+local function trackerDisplay(data,presence,server)
+    trackerClearResults()
+    local types={[0]="OFFLINE",[1]="ONLINE",[2]="IN GAME",[3]="IN STUDIO"}
+    local state=presence.userPresenceType or 0
+    trackerInfo("USERNAME: @"..data.username)
+    trackerInfo("USER ID: "..tostring(data.userId))
+    trackerInfo("PLAYER STATUS: "..(types[state] or "UNKNOWN"),state==2 and C.Green or C.Lavender)
+    trackerAction("COPY USER ID",function() trackerCopy(data.userId) end)
+
+    if state~=2 then
+        trackerCurrentData=nil
+        trackerInfo("PLAYER IS NOT CURRENTLY IN A GAME",C.Muted)
+        return
+    end
+
+    local placeId,jobId=presence.placeId,presence.gameId
+    if not placeId or not jobId or jobId=="" then
+        trackerCurrentData=nil
+        trackerInfo("SERVER INFORMATION UNAVAILABLE",C.Lavender)
+        return
+    end
+
+    data.placeId=placeId
+    data.jobId=tostring(jobId)
+    trackerInfo("GAME: "..tostring(presence.lastLocation or "Unknown"))
+    trackerInfo("PLACE ID: "..tostring(placeId))
+    trackerInfo("JOB ID: "..tostring(jobId))
+
+    if server then
+        trackerInfo("SERVER: "..server.playing.."/"..server.maxPlayers,C.Green)
+        trackerInfo("AVAILABLE SLOTS: "..server.available,server.available>0 and C.Green or C.Red)
+    else
+        trackerInfo("SERVER COUNT: NOT FOUND IN PUBLIC LIST",C.Lavender)
+    end
+
+    local link="roblox://experiences/start?placeId="..tostring(placeId).."&gameInstanceId="..tostring(jobId)
+    data.serverLink=link
+    trackerCurrentData=data
+    trackerJobBox.Text=tostring(jobId)
+
+    trackerAction("COPY JOB ID",function() trackerCopy(data.jobId) end)
+    trackerAction("COPY SERVER LINK",function() trackerCopy(link) end)
+    trackerAction("JOIN PLAYER SERVER",function()
+        if not trackerCurrentData then return end
+        trackerSetStatus("JOINING SERVER...",C.Lavender)
+        local ok,err=pcall(function()
+            TeleportService:TeleportToPlaceInstance(tonumber(data.placeId),data.jobId,Player)
+        end)
+        if not ok then trackerSetStatus("JOIN FAILED: "..tostring(err),C.Red) end
+    end)
+    trackerAction("COPY GAME PAGE",function()
+        trackerCopy("https://www.roblox.com/games/"..tostring(placeId))
+    end)
+end
+
+local function trackerSearchPlayer()
+    if trackerBusy then return end
+    local username=trackerSearch.Text:match("^%s*(.-)%s*$")
+    if username=="" then trackerSetStatus("ENTER USERNAME",C.Red) return end
+
+    trackerBusy=true
+    trackerCurrentData=nil
+    trackerSearchBtn.Text="SEARCHING..."
+    trackerSetStatus("SEARCHING ROBLOX...",C.Lavender)
+    trackerClearResults()
+
+    task.spawn(function()
+        local ok,err=pcall(function()
+            local userData=trackerApi(
+                "https://users.roblox.com/v1/usernames/users",
+                "POST",
+                {usernames={username},excludeBannedUsers=false}
+            )
+            local user=userData.data and userData.data[1]
+            if not user then error("Username not found") end
+            local data={username=user.name,userId=user.id}
+            local presence=trackerPresence(user.id)
+            if not presence then error("Presence unavailable") end
+
+            local server
+            if presence.userPresenceType==2 and presence.placeId and presence.gameId then
+                trackerSetStatus("CHECKING SERVER COUNT...",C.Lavender)
+                local found,result=pcall(function()
+                    return trackerFindServer(presence.placeId,presence.gameId)
+                end)
+                if found then server=result end
+            end
+            trackerDisplay(data,presence,server)
+            trackerSetStatus("SEARCH COMPLETE",C.Green)
+        end)
+        if not ok then
+            trackerClearResults()
+            trackerCurrentData=nil
+            trackerInfo("ERROR: "..tostring(err),C.Red)
+            trackerSetStatus("SEARCH FAILED",C.Red)
+        end
+        trackerBusy=false
+        trackerSearchBtn.Text="⌕  SEARCH PLAYER"
+    end)
+end
+
+local function trackerRefresh()
+    if trackerBusy then return end
+    if not trackerCurrentData then trackerSetStatus("SEARCH PLAYER FIRST",C.Red) return end
+    trackerBusy=true
+    trackerRefreshBtn.Text="REFRESHING..."
+    trackerSetStatus("UPDATING SERVER...",C.Lavender)
+    local saved=trackerCurrentData
+
+    task.spawn(function()
+        local ok,err=pcall(function()
+            local presence=trackerPresence(saved.userId)
+            if not presence then error("Presence unavailable") end
+            local server
+            if presence.userPresenceType==2 and presence.placeId and presence.gameId then
+                local found,result=pcall(function()
+                    return trackerFindServer(presence.placeId,presence.gameId)
+                end)
+                if found then server=result end
+            end
+            trackerDisplay(saved,presence,server)
+            trackerSetStatus("REFRESHED",C.Green)
+        end)
+        if not ok then trackerSetStatus("REFRESH FAILED: "..tostring(err),C.Red) end
+        trackerBusy=false
+        trackerRefreshBtn.Text="↻  REFRESH"
+    end)
+end
+
+trackerSearchBtn.Activated:Connect(trackerSearchPlayer)
+trackerSearch.FocusLost:Connect(function(enter)
+    if enter then trackerSearchPlayer() end
+end)
+trackerRefreshBtn.Activated:Connect(trackerRefresh)
+
+trackerAutoBtn.Activated:Connect(function()
+    trackerAuto=not trackerAuto
+    trackerAutoToken+=1
+    local token=trackerAutoToken
+    trackerAutoBtn.Text=trackerAuto and "AUTO: ON" or "AUTO: OFF"
+    if trackerAuto then
+        task.spawn(function()
+            while trackerAuto and trackerAutoToken==token do
+                task.wait(10)
+                if trackerAuto and trackerCurrentData and not trackerBusy then
+                    trackerRefresh()
+                end
+            end
+        end)
+    end
+end)
+
+trackerJoinBtn.Activated:Connect(function()
+    local jobId=trackerJobBox.Text:match("^%s*(.-)%s*$")
+    if jobId=="" then trackerSetStatus("ENTER JOB ID",C.Red) return end
+    if not trackerCurrentData or not trackerCurrentData.placeId then
+        trackerSetStatus("SEARCH A PLAYER FIRST FOR PLACE ID",C.Red)
+        return
+    end
+    trackerSetStatus("JOINING JOB ID...",C.Lavender)
+    local ok,err=pcall(function()
+        TeleportService:TeleportToPlaceInstance(
+            tonumber(trackerCurrentData.placeId),jobId,Player
+        )
+    end)
+    if not ok then trackerSetStatus("JOIN FAILED: "..tostring(err),C.Red) end
+end)
+
 --========================================================
 -- SETTINGS
 --========================================================
@@ -1907,796 +2261,3 @@ task.spawn(function()
 end)
 
 print("AURA X V6.5 | PREMIUM SHINE EDITION + COMBAT HUB LOADED")
-
---========================================================
--- AURA PLAYER TRACKER V6 | INTEGRATED MODULE
---========================================================
-
---====================================================
--- AURA PLAYER TRACKER V6
--- Compact GUI | Improved Server Lookup
--- Player Count | Available Slots | Copy Job ID
--- Join by Job ID | Refresh | Auto Refresh
---====================================================
-
-local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
-local UserInputService = game:GetService("UserInputService")
-local TeleportService = game:GetService("TeleportService")
-
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-
--- CLEANUP
-for _,parent in ipairs({playerGui,game:GetService("CoreGui")}) do
-    pcall(function()
-        local old = parent:FindFirstChild("AuraPlayerTracker")
-        if old then old:Destroy() end
-    end)
-end
-
--- COLORS
-local C = {
-    bg = Color3.fromRGB(9,9,14),
-    panel = Color3.fromRGB(17,17,25),
-    card = Color3.fromRGB(27,27,38),
-    red = Color3.fromRGB(220,30,50),
-    darkRed = Color3.fromRGB(85,12,23),
-    white = Color3.fromRGB(240,240,245),
-    gray = Color3.fromRGB(135,135,145),
-    green = Color3.fromRGB(50,210,120),
-    yellow = Color3.fromRGB(255,185,50)
-}
-
--- GUI
-local gui = Instance.new("ScreenGui")
-gui.Name = "AuraPlayerTracker"
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 999
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-pcall(function()
-    gui.Parent = game:GetService("CoreGui")
-end)
-
-if not gui.Parent then
-    gui.Parent = playerGui
-end
-
-local function corner(obj,r)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0,r)
-    c.Parent = obj
-end
-
-local function stroke(obj,color)
-    local s = Instance.new("UIStroke")
-    s.Color = color
-    s.Thickness = 1.2
-    s.Parent = obj
-end
-
-local function makeLabel(parent,text,height,color,size)
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(1,-10,0,height)
-    l.BackgroundTransparency = 1
-    l.Text = text
-    l.TextColor3 = color or C.white
-    l.Font = Enum.Font.Gotham
-    l.TextSize = size or 10
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.TextWrapped = true
-    l.Parent = parent
-    return l
-end
-
-local function makeButton(parent,text,y,color,height)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1,-12,0,height or 27)
-    b.Position = UDim2.fromOffset(6,y)
-    b.BackgroundColor3 = color or C.card
-    b.Text = text
-    b.TextColor3 = C.white
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 9
-    b.BorderSizePixel = 0
-    b.Parent = parent
-    corner(b,6)
-    return b
-end
-
--- FLOATING ICON
-local icon = Instance.new("TextButton")
-icon.Size = UDim2.fromOffset(42,42)
-icon.Position = UDim2.new(0,8,0.5,-21)
-icon.BackgroundColor3 = C.bg
-icon.Text = "👑"
-icon.TextSize = 20
-icon.TextColor3 = C.red
-icon.BorderSizePixel = 0
-icon.Parent = gui
-corner(icon,21)
-stroke(icon,C.red)
-
--- MAIN MENU
-local main = Instance.new("Frame")
-main.Size = UDim2.fromOffset(310,335)
-main.Position = UDim2.new(0.5,-155,0.5,-167)
-main.BackgroundColor3 = C.bg
-main.BorderSizePixel = 0
-main.Visible = false
-main.ClipsDescendants = true
-main.Parent = gui
-corner(main,11)
-stroke(main,C.red)
-
--- HEADER
-local header = Instance.new("Frame")
-header.Size = UDim2.new(1,0,0,34)
-header.BackgroundColor3 = C.panel
-header.BorderSizePixel = 0
-header.Parent = main
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1,-60,1,0)
-title.Position = UDim2.fromOffset(9,0)
-title.BackgroundTransparency = 1
-title.Text = "👑 AURA TRACKER V6"
-title.TextColor3 = C.white
-title.Font = Enum.Font.GothamBold
-title.TextSize = 11
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = header
-
-local close = Instance.new("TextButton")
-close.Size = UDim2.fromOffset(24,24)
-close.Position = UDim2.new(1,-28,0,5)
-close.BackgroundColor3 = C.darkRed
-close.Text = "✕"
-close.TextColor3 = C.white
-close.Font = Enum.Font.GothamBold
-close.TextSize = 10
-close.Parent = header
-corner(close,5)
-
--- DRAG
-local dragging = false
-local dragStart
-local startPosition
-
-header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch
-        or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPosition = main.Position
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (
-        input.UserInputType == Enum.UserInputType.Touch or
-        input.UserInputType == Enum.UserInputType.MouseMovement
-    ) then
-        local delta = input.Position - dragStart
-        main.Position = UDim2.new(
-            startPosition.X.Scale,
-            startPosition.X.Offset + delta.X,
-            startPosition.Y.Scale,
-            startPosition.Y.Offset + delta.Y
-        )
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch
-        or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
-    end
-end)
-
--- SEARCH
-local search = Instance.new("TextBox")
-search.Size = UDim2.new(1,-12,0,28)
-search.Position = UDim2.fromOffset(6,40)
-search.BackgroundColor3 = C.card
-search.PlaceholderText = "Enter Roblox username..."
-search.PlaceholderColor3 = C.gray
-search.Text = ""
-search.TextColor3 = C.white
-search.Font = Enum.Font.Gotham
-search.TextSize = 10
-search.ClearTextOnFocus = false
-search.Parent = main
-corner(search,6)
-
-local searchBtn = makeButton(main,"🔍 SEARCH PLAYER",73,C.red,26)
-
--- STATUS
-local status = makeLabel(main,"STATUS: READY",17,C.gray,9)
-status.Position = UDim2.fromOffset(8,102)
-
--- REFRESH CONTROLS
-local refreshBtn = Instance.new("TextButton")
-refreshBtn.Size = UDim2.new(0.48,-5,0,25)
-refreshBtn.Position = UDim2.fromOffset(6,121)
-refreshBtn.BackgroundColor3 = C.card
-refreshBtn.Text = "↻ REFRESH"
-refreshBtn.TextColor3 = C.white
-refreshBtn.Font = Enum.Font.GothamBold
-refreshBtn.TextSize = 9
-refreshBtn.Parent = main
-corner(refreshBtn,6)
-
-local autoBtn = Instance.new("TextButton")
-autoBtn.Size = UDim2.new(0.48,-5,0,25)
-autoBtn.Position = UDim2.new(0.52,0,0,121)
-autoBtn.BackgroundColor3 = C.card
-autoBtn.Text = "AUTO: OFF"
-autoBtn.TextColor3 = C.gray
-autoBtn.Font = Enum.Font.GothamBold
-autoBtn.TextSize = 9
-autoBtn.Parent = main
-corner(autoBtn,6)
-
--- RESULTS
-local results = Instance.new("ScrollingFrame")
-results.Size = UDim2.new(1,-12,1,-155)
-results.Position = UDim2.fromOffset(6,151)
-results.BackgroundColor3 = C.panel
-results.BorderSizePixel = 0
-results.ScrollBarThickness = 3
-results.ScrollBarImageColor3 = C.red
-results.AutomaticCanvasSize = Enum.AutomaticSize.Y
-results.CanvasSize = UDim2.new()
-results.Parent = main
-corner(results,7)
-
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0,3)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Parent = results
-
-local padding = Instance.new("UIPadding")
-padding.PaddingTop = UDim.new(0,5)
-padding.PaddingLeft = UDim.new(0,5)
-padding.PaddingRight = UDim.new(0,5)
-padding.PaddingBottom = UDim.new(0,5)
-padding.Parent = results
-
--- HTTP REQUEST
-local function getRequest()
-    return request or http_request or
-        (syn and syn.request) or
-        (http and http.request)
-end
-
-local function api(url,method,body)
-    local req = getRequest()
-    assert(req,"HTTP request unavailable")
-
-    local response = req({
-        Url = url,
-        Method = method or "GET",
-        Headers = {
-            ["Content-Type"] = "application/json",
-            ["Accept"] = "application/json"
-        },
-        Body = body and HttpService:JSONEncode(body) or nil
-    })
-
-    if not response or response.StatusCode < 200
-        or response.StatusCode >= 300 then
-        error("HTTP "..tostring(
-            response and response.StatusCode
-        ))
-    end
-
-    return HttpService:JSONDecode(response.Body)
-end
-
--- STATE
-local currentData = nil
-local busy = false
-local autoRefresh = false
-local refreshToken = 0
-
-local function setStatus(text,color)
-    status.Text = "STATUS: "..text
-    status.TextColor3 = color or C.gray
-end
-
-local function clearResults()
-    for _,v in ipairs(results:GetChildren()) do
-        if v:IsA("TextLabel") or
-            v:IsA("TextButton") or
-            v:IsA("TextBox") then
-            v:Destroy()
-        end
-    end
-end
-
-local function addInfo(text,color)
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(1,-5,0,25)
-    l.BackgroundColor3 = C.card
-    l.Text = "  "..text
-    l.TextColor3 = color or C.white
-    l.Font = Enum.Font.Gotham
-    l.TextSize = 9
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.TextWrapped = true
-    l.Parent = results
-    corner(l,5)
-    return l
-end
-
-local function addAction(text,callback,color)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1,-5,0,27)
-    b.BackgroundColor3 = color or C.card
-    b.Text = text
-    b.TextColor3 = C.white
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 9
-    b.BorderSizePixel = 0
-    b.Parent = results
-    corner(b,5)
-    b.MouseButton1Click:Connect(callback)
-    return b
-end
-
--- CLIPBOARD
-local function copyText(value)
-    local clip = setclipboard or toclipboard or
-        (syn and syn.set_clipboard)
-
-    if not clip then
-        setStatus("CLIPBOARD UNAVAILABLE",C.red)
-        return false
-    end
-
-    local ok = pcall(function()
-        clip(tostring(value))
-    end)
-
-    setStatus(ok and "COPIED" or "COPY FAILED",
-        ok and C.green or C.red)
-
-    return ok
-end
-
--- MANUAL LINK
-local function addManualLink(link)
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(1,-5,0,43)
-    box.BackgroundColor3 = C.card
-    box.Text = link
-    box.TextColor3 = C.yellow
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 8
-    box.TextWrapped = true
-    box.TextXAlignment = Enum.TextXAlignment.Left
-    box.TextYAlignment = Enum.TextYAlignment.Center
-    box.ClearTextOnFocus = false
-    box.TextEditable = false
-    box.Parent = results
-    corner(box,5)
-end
-
--- JOIN BY JOB ID
-local function addJobIdJoin(placeId,defaultJobId)
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(1,-5,0,30)
-    box.BackgroundColor3 = C.card
-    box.PlaceholderText = "Paste Job ID here..."
-    box.PlaceholderColor3 = C.gray
-    box.Text = tostring(defaultJobId or "")
-    box.TextColor3 = C.white
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 9
-    box.ClearTextOnFocus = false
-    box.TextXAlignment = Enum.TextXAlignment.Center
-    box.Parent = results
-    corner(box,5)
-
-    addAction("🚀 JOIN BY JOB ID",function()
-        local jobId = box.Text:match("^%s*(.-)%s*$")
-
-        if not jobId or jobId == "" then
-            setStatus("ENTER JOB ID",C.red)
-            return
-        end
-
-        if not placeId then
-            setStatus("PLACE ID UNAVAILABLE",C.red)
-            return
-        end
-
-        setStatus("JOINING JOB ID...",C.yellow)
-
-        local ok,err = pcall(function()
-            TeleportService:TeleportToPlaceInstance(
-                tonumber(placeId),
-                jobId,
-                player
-            )
-        end)
-
-        if not ok then
-            setStatus("JOIN FAILED: "..tostring(err),C.red)
-        end
-    end,C.green)
-end
-
--- SERVER COUNT LOOKUP
-local function findServer(placeId,jobId)
-    local sortOrders = {"Asc","Desc"}
-
-    for _,sortOrder in ipairs(sortOrders) do
-        local cursor = nil
-
-        for page = 1,50 do
-            local url =
-                "https://games.roblox.com/v1/games/"
-                ..tostring(placeId)
-                .."/servers/Public?sortOrder="
-                ..sortOrder
-                .."&limit=10&excludeFullGames=false"
-
-            if cursor then
-                url = url.."&cursor="..
-                    HttpService:UrlEncode(cursor)
-            end
-
-            local data = api(url,"GET")
-
-            for _,server in ipairs(data.data or {}) do
-                if tostring(server.id) == tostring(jobId) then
-                    local playing = tonumber(server.playing)
-                    local maxPlayers = tonumber(server.maxPlayers)
-
-                    if playing and maxPlayers then
-                        return {
-                            playing = playing,
-                            maxPlayers = maxPlayers,
-                            available = math.max(0,maxPlayers-playing)
-                        }
-                    end
-                end
-            end
-
-            cursor = data.nextPageCursor
-
-            if not cursor or cursor == "" then
-                break
-            end
-
-            task.wait(0.15)
-        end
-    end
-
-    return nil
-end
-
--- PRESENCE
-local function getPresence(userId)
-    local data = api(
-        "https://presence.roblox.com/v1/presence/users",
-        "POST",
-        {userIds = {userId}}
-    )
-
-    return data.userPresences and
-        data.userPresences[1]
-end
-
--- DISPLAY PLAYER
-local function displayPlayer(data,presence,server)
-    clearResults()
-
-    local types = {
-        [0] = "OFFLINE",
-        [1] = "ONLINE",
-        [2] = "IN GAME",
-        [3] = "IN STUDIO"
-    }
-
-    addInfo("USERNAME: @"..data.username)
-    addInfo("USER ID: "..tostring(data.userId))
-
-    local state = presence.userPresenceType or 0
-
-    addInfo(
-        "PLAYER STATUS: "..(types[state] or "UNKNOWN"),
-        state == 2 and C.green or C.yellow
-    )
-
-    addAction("📋 COPY USER ID",function()
-        copyText(data.userId)
-    end)
-
-    if state ~= 2 then
-        currentData = nil
-        addInfo("PLAYER IS NOT CURRENTLY IN A GAME")
-        return
-    end
-
-    local placeId = presence.placeId
-    local jobId = presence.gameId
-
-    if not placeId or not jobId or jobId == "" then
-        currentData = nil
-        addInfo("SERVER INFORMATION UNAVAILABLE")
-        return
-    end
-
-    data.placeId = placeId
-    data.jobId = tostring(jobId)
-
-    addInfo("GAME: "..tostring(
-        presence.lastLocation or "Unknown"
-    ))
-
-    addInfo("PLACE ID: "..tostring(placeId))
-    addInfo("JOB ID: "..tostring(jobId))
-
-    if server then
-        addInfo(
-            "SERVER: "..server.playing.."/"..server.maxPlayers,
-            C.green
-        )
-
-        addInfo(
-            "AVAILABLE SLOTS: "..server.available,
-            server.available > 0 and C.green or C.red
-        )
-    else
-        addInfo(
-            "SERVER COUNT: NOT FOUND IN PUBLIC LIST",
-            C.yellow
-        )
-    end
-
-    local link =
-        "roblox://experiences/start?placeId="
-        ..tostring(placeId)
-        .."&gameInstanceId="
-        ..tostring(jobId)
-
-    data.serverLink = link
-    currentData = data
-
-    -- COPY JOB ID
-    addAction("📋 COPY JOB ID",function()
-        copyText(data.jobId)
-    end,C.darkRed)
-
-    -- COPY SERVER LINK
-    addAction("📋 COPY SERVER LINK",function()
-        if not copyText(link) then
-            setStatus("SELECT LINK BELOW",C.yellow)
-        end
-    end,C.darkRed)
-
-    addManualLink(link)
-
-    -- JOIN PLAYER SERVER
-    addAction("🚀 JOIN PLAYER SERVER",function()
-        if not currentData then return end
-
-        setStatus("JOINING SERVER...",C.yellow)
-
-        local ok,err = pcall(function()
-            TeleportService:TeleportToPlaceInstance(
-                tonumber(currentData.placeId),
-                currentData.jobId,
-                player
-            )
-        end)
-
-        if not ok then
-            setStatus("JOIN FAILED: "..tostring(err),C.red)
-        end
-    end,C.green)
-
-    -- JOIN MANUAL JOB ID
-    addJobIdJoin(placeId,jobId)
-
-    -- GAME PAGE
-    addAction("🌐 COPY GAME PAGE",function()
-        copyText(
-            "https://www.roblox.com/games/"
-            ..tostring(placeId)
-        )
-    end)
-end
-
--- SEARCH
-local function searchPlayer()
-    if busy then return end
-
-    local username = search.Text:match("^%s*(.-)%s*$")
-
-    if username == "" then
-        setStatus("ENTER USERNAME",C.red)
-        return
-    end
-
-    busy = true
-    currentData = nil
-    searchBtn.Text = "SEARCHING..."
-    setStatus("SEARCHING ROBLOX...",C.yellow)
-    clearResults()
-
-    task.spawn(function()
-        local ok,err = pcall(function()
-
-            local userData = api(
-                "https://users.roblox.com/v1/usernames/users",
-                "POST",
-                {
-                    usernames = {username},
-                    excludeBannedUsers = false
-                }
-            )
-
-            local user = userData.data and userData.data[1]
-
-            if not user then
-                error("Username not found")
-            end
-
-            local data = {
-                username = user.name,
-                userId = user.id
-            }
-
-            local presence = getPresence(user.id)
-
-            if not presence then
-                error("Presence unavailable")
-            end
-
-            local server = nil
-
-            if presence.userPresenceType == 2
-                and presence.placeId
-                and presence.gameId then
-
-                setStatus("CHECKING SERVER COUNT...",C.yellow)
-
-                local serverOK,result = pcall(function()
-                    return findServer(
-                        presence.placeId,
-                        presence.gameId
-                    )
-                end)
-
-                if serverOK then
-                    server = result
-                end
-            end
-
-            displayPlayer(data,presence,server)
-            setStatus("SEARCH COMPLETE",C.green)
-        end)
-
-        if not ok then
-            clearResults()
-            currentData = nil
-            addInfo("ERROR: "..tostring(err),C.red)
-            setStatus("SEARCH FAILED",C.red)
-        end
-
-        busy = false
-        searchBtn.Text = "🔍 SEARCH PLAYER"
-    end)
-end
-
--- REFRESH
-local function refreshStatus()
-    if busy then return end
-
-    if not currentData then
-        setStatus("SEARCH PLAYER FIRST",C.red)
-        return
-    end
-
-    busy = true
-    refreshBtn.Text = "REFRESHING..."
-    setStatus("UPDATING SERVER...",C.yellow)
-
-    local saved = currentData
-
-    task.spawn(function()
-        local ok,err = pcall(function()
-
-            local presence = getPresence(saved.userId)
-
-            if not presence then
-                error("Presence unavailable")
-            end
-
-            local server = nil
-
-            if presence.userPresenceType == 2
-                and presence.placeId
-                and presence.gameId then
-
-                local serverOK,result = pcall(function()
-                    return findServer(
-                        presence.placeId,
-                        presence.gameId
-                    )
-                end)
-
-                if serverOK then
-                    server = result
-                end
-            end
-
-            displayPlayer(saved,presence,server)
-            setStatus("REFRESHED",C.green)
-        end)
-
-        if not ok then
-            setStatus("REFRESH FAILED: "..tostring(err),C.red)
-        end
-
-        busy = false
-        refreshBtn.Text = "↻ REFRESH"
-    end)
-end
-
--- AUTO REFRESH
-local function setAutoRefresh(on)
-    autoRefresh = on
-    refreshToken += 1
-
-    local token = refreshToken
-
-    autoBtn.Text = on and "AUTO: ON" or "AUTO: OFF"
-    autoBtn.BackgroundColor3 = on and C.darkRed or C.card
-    autoBtn.TextColor3 = on and C.white or C.gray
-
-    if on then
-        task.spawn(function()
-            while autoRefresh and refreshToken == token do
-                task.wait(10)
-
-                if autoRefresh and currentData and not busy then
-                    refreshStatus()
-                end
-            end
-        end)
-    end
-end
-
--- CONNECTIONS
-searchBtn.MouseButton1Click:Connect(searchPlayer)
-refreshBtn.MouseButton1Click:Connect(refreshStatus)
-
-autoBtn.MouseButton1Click:Connect(function()
-    setAutoRefresh(not autoRefresh)
-end)
-
-search.FocusLost:Connect(function(enter)
-    if enter then
-        searchPlayer()
-    end
-end)
-
--- OPEN / CLOSE
-icon.MouseButton1Click:Connect(function()
-    main.Visible = not main.Visible
-    icon.Visible = not main.Visible
-end)
-
-close.MouseButton1Click:Connect(function()
-    main.Visible = false
-    icon.Visible = true
-end)
-
-print("AURA PLAYER TRACKER V6 LOADED")
-print("Improved Count | Available Slots | Copy Job ID | Join by Job ID")
