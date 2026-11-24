@@ -1355,10 +1355,15 @@ local function startFollowing()
     followEnabled = true
     followButton.Text = "🎯  STICK TO PLAYER: ON"
 
-    -- Instant initial teleport: exact same CFrame (0-stud offset).
-    myRoot.CFrame = targetRoot.CFrame
-    myRoot.AssemblyLinearVelocity = targetRoot.AssemblyLinearVelocity
+    -- Pivot the whole character instantly; changing only HRP can be
+    -- counteracted by the Humanoid's walking controller in some experiences.
+    myCharacter:PivotTo(targetCharacter:GetPivot())
+    myRoot.AssemblyLinearVelocity = Vector3.zero
     myRoot.AssemblyAngularVelocity = Vector3.zero
+    local myHumanoid = myCharacter:FindFirstChildOfClass("Humanoid")
+    if myHumanoid then
+        myHumanoid:Move(Vector3.zero, false)
+    end
 
     followConnection = RunService.RenderStepped:Connect(function()
         if not followEnabled then return end
@@ -1371,16 +1376,21 @@ local function startFollowing()
         end
 
         local targetChar = selectedTarget.Character
-        local targetPart = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
         local myChar = Player.Character
-        local myPart = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not targetChar or not myChar then return end
 
+        local targetPart = targetChar:FindFirstChild("HumanoidRootPart")
+        local myPart = myChar:FindFirstChild("HumanoidRootPart")
         if not targetPart or not myPart then return end
 
-        -- Keep the local character at the target's exact position every frame.
-        myPart.CFrame = targetPart.CFrame
-        myPart.AssemblyLinearVelocity = targetPart.AssemblyLinearVelocity
+        -- Reposition the complete rig each frame instead of walking toward it.
+        myChar:PivotTo(targetChar:GetPivot())
+        myPart.AssemblyLinearVelocity = Vector3.zero
         myPart.AssemblyAngularVelocity = Vector3.zero
+        local humanoid = myChar:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid:Move(Vector3.zero, false)
+        end
     end)
 end
 
