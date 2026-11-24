@@ -1519,12 +1519,6 @@ GUI.Destroying:Connect(function()
     restoreAntiFling()
 end)
 
-Player.CharacterAdded:Connect(function()
-    if godEnabled then
-        task.wait(.2)
-        applyGodMode()
-    end
-end)
 
 --========================================================
 -- SETTINGS
