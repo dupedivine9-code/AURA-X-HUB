@@ -1283,6 +1283,7 @@ section(CombatPage,"TP PLAYER","Stick to any player in the server")
 
 local tpOpen = false
 local currentTarget = nil
+local trackingTarget = nil
 
 local tpCard = new("Frame",CombatPage,{
     Size = UDim2.new(1,0,0,76),
@@ -1296,7 +1297,21 @@ outline(tpCard,C.LightPurple,.78)
 
 local tpTitle = label(tpCard,"📍  TARGET SELECTOR",10,C.White,BOLD)
 tpTitle.Position = UDim2.fromOffset(11,9)
-tpTitle.Size = UDim2.new(1,-90,0,18)
+tpTitle.Size = UDim2.new(1,-160,0,18)
+
+local stickBtn = new("TextButton",tpCard,{
+    Position = UDim2.new(1,-144,0,7),
+    Size = UDim2.fromOffset(64,22),
+    BackgroundColor3 = C.Green,
+    BackgroundTransparency = .12,
+    Text = "STICK",
+    TextColor3 = C.Base,
+    Font = BOLD,
+    TextSize = 9,
+    AutoButtonColor = false,
+    Visible = false
+})
+round(stickBtn,6)
 
 local stopBtn = new("TextButton",tpCard,{
     Position = UDim2.new(1,-74,0,7),
@@ -1311,6 +1326,10 @@ local stopBtn = new("TextButton",tpCard,{
     Visible = false
 })
 round(stopBtn,6)
+
+local trackStatus = label(CombatPage,"TRACKER: Select a player, then press STICK",9,C.Muted,FONT)
+trackStatus.Size = UDim2.new(1,0,0,20)
+trackStatus.TextXAlignment = Enum.TextXAlignment.Left
 
 local dropBtn = new("TextButton",tpCard,{
     Position = UDim2.fromOffset(10,36),
@@ -1393,9 +1412,22 @@ dropBtn.Activated:Connect(function()
     setDropdownOpen(not tpOpen)
 end)
 
+stickBtn.Activated:Connect(function()
+    if not currentTarget or currentTarget.Parent ~= Players then
+        trackStatus.Text = "TRACKER: Select a player first"
+        trackStatus.TextColor3 = C.Red
+        return
+    end
+    trackingTarget = currentTarget
+    trackStatus.Text = "TRACKING: "..trackingTarget.DisplayName.." | 0-stud offset"
+    trackStatus.TextColor3 = C.Green
+end)
+
 stopBtn.Activated:Connect(function()
+    trackingTarget = nil
     currentTarget = nil
     stopBtn.Visible = false
+    stickBtn.Visible = false
     dropBtn.Text = "Select Player... ▾"
     trackStatus.Text = "TRACKER: Follow stopped"
     trackStatus.TextColor3 = C.Muted
@@ -1432,10 +1464,14 @@ local function updatePlayerList()
 
                 btn.Activated:Connect(function()
                     currentTarget = p
-                    stopBtn.Visible = true
+                    trackingTarget = nil
+                    stopBtn.Visible = false
+                    stickBtn.Visible = true
                     setDropdownOpen(false)
                     local shortName = #p.Name > 16 and string.sub(p.Name,1,14)..".." or p.Name
                     dropBtn.Text = shortName.." ▾"
+                    trackStatus.Text = "SELECTED: "..p.DisplayName.." | Press STICK to follow"
+                    trackStatus.TextColor3 = C.Lavender
                     updatePlayerList()
                 end)
             end
@@ -1450,15 +1486,11 @@ end
 
 searchBox:GetPropertyChangedSignal("Text"):Connect(updatePlayerList)
 
-local trackStatus = label(CombatPage,"TRACKER: No target selected",9,C.Muted,FONT)
-trackStatus.Size = UDim2.new(1,0,0,20)
-trackStatus.TextXAlignment = Enum.TextXAlignment.Left
-
 local trackerAccumulator = 0
 RunService.RenderStepped:Connect(function(dt)
     if not GUI.Parent then return end
 
-    local target = currentTarget
+    local target = trackingTarget
     local targetChar = target and target.Character
     local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
     local targetHum = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
@@ -1488,8 +1520,12 @@ Players.PlayerAdded:Connect(updatePlayerList)
 Players.PlayerRemoving:Connect(function(p)
     if currentTarget == p then
         currentTarget = nil
-        stopBtn.Visible = false
+        stickBtn.Visible = false
         dropBtn.Text = "Select Player... ▾"
+    end
+    if trackingTarget == p then
+        trackingTarget = nil
+        stopBtn.Visible = false
         trackStatus.Text = "TRACKER: Target left the server"
         trackStatus.TextColor3 = C.Red
     end
