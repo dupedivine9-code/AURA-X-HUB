@@ -1158,6 +1158,8 @@ end)
 section(ToolsPage,"✦ PLAYER TOOLS","Local utilities and player selection")
 hero(ToolsPage,"✦ AURA UTILITIES","Select a player or enable local protection tools.")
 
+local followEnabled = false
+local followConnection = nil
 local selectedTarget = nil
 
 local targetPanel = new("Frame",ToolsPage,{
@@ -1318,8 +1320,6 @@ end)
 refreshTargets()
 
 -- TARGET ACTIONS
-local followEnabled = false
-local followConnection = nil
 
 local function stopFollowing()
     followEnabled = false
@@ -1327,57 +1327,71 @@ local function stopFollowing()
         followConnection:Disconnect()
         followConnection = nil
     end
+
+    local character = Player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid:Move(Vector3.zero, false)
+    end
 end
 
-local followButton = button(ToolsPage,"🎯  STICK TO SELECTED PLAYER: OFF")
-followButton.Activated:Connect(function()
-    if followEnabled then
-        stopFollowing()
-        followButton.Text = "🎯  STICK TO SELECTED PLAYER: OFF"
-        return
-    end
-
+local function startFollowing()
     if not selectedTarget or not selectedTarget.Parent then
         targetButton.Text = "SELECT A PLAYER FIRST"
         return
     end
 
+    local targetCharacter = selectedTarget.Character
+    local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+    local myCharacter = Player.Character
+    local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+
+    if not targetRoot or not myRoot then
+        targetButton.Text = "PLAYER / CHARACTER UNAVAILABLE"
+        return
+    end
+
+    stopFollowing()
     followEnabled = true
     followButton.Text = "🎯  STICK TO PLAYER: ON"
-    local moveTimer = 0
 
-    followConnection = RunService.Heartbeat:Connect(function(dt)
+    -- Instant initial teleport: exact same CFrame (0-stud offset).
+    myRoot.CFrame = targetRoot.CFrame
+    myRoot.AssemblyLinearVelocity = targetRoot.AssemblyLinearVelocity
+    myRoot.AssemblyAngularVelocity = Vector3.zero
+
+    followConnection = RunService.RenderStepped:Connect(function()
         if not followEnabled then return end
 
         if not selectedTarget or not selectedTarget.Parent then
             stopFollowing()
             followButton.Text = "🎯  STICK TO SELECTED PLAYER: OFF"
+            targetButton.Text = "TARGET LEFT THE SERVER"
             return
         end
 
-        local targetCharacter = selectedTarget.Character
-        local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
-        local myCharacter = Player.Character
-        local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
-        local myHumanoid = myCharacter and myCharacter:FindFirstChildOfClass("Humanoid")
+        local targetChar = selectedTarget.Character
+        local targetPart = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+        local myChar = Player.Character
+        local myPart = myChar and myChar:FindFirstChild("HumanoidRootPart")
 
-        if not targetRoot or not myRoot or not myHumanoid or myHumanoid.Health <= 0 then
-            return
-        end
+        if not targetPart or not myPart then return end
 
-        moveTimer += dt
-        if moveTimer >= 0.12 then
-            moveTimer = 0
-            local desiredPosition = targetRoot.Position - targetRoot.CFrame.LookVector * 3.5
-            local offset = desiredPosition - myRoot.Position
-
-            if offset.Magnitude > 2.5 then
-                myHumanoid:MoveTo(desiredPosition)
-            else
-                myHumanoid:Move(Vector3.zero,false)
-            end
-        end
+        -- Keep the local character at the target's exact position every frame.
+        myPart.CFrame = targetPart.CFrame
+        myPart.AssemblyLinearVelocity = targetPart.AssemblyLinearVelocity
+        myPart.AssemblyAngularVelocity = Vector3.zero
     end)
+end
+
+local followButton = button(ToolsPage,"🎯  STICK TO SELECTED PLAYER")
+followButton.Activated:Connect(function()
+    if followEnabled then
+        stopFollowing()
+        followButton.Text = "🎯  STICK TO SELECTED PLAYER"
+    else
+        startFollowing()
+    end
 end)
 
 local teleportButton = button(ToolsPage,"📍  TELEPORT ONCE TO SELECTED PLAYER")
@@ -1387,16 +1401,18 @@ teleportButton.Activated:Connect(function()
     local targetCharacter = selectedTarget and selectedTarget.Character
     local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
     if rootPart and targetRoot then
-        rootPart.CFrame = targetRoot.CFrame * CFrame.new(0,0,4)
+        rootPart.CFrame = targetRoot.CFrame
+        rootPart.AssemblyLinearVelocity = targetRoot.AssemblyLinearVelocity
+        rootPart.AssemblyAngularVelocity = Vector3.zero
     else
         targetButton.Text = "PLAYER / CHARACTER UNAVAILABLE"
     end
 end)
 
-local unstickButton = button(ToolsPage,"↺  UNSTICK / RESET VELOCITY")
+local unstickButton = button(ToolsPage,"↺  UNSTICK")
 unstickButton.Activated:Connect(function()
     stopFollowing()
-    followButton.Text = "🎯  STICK TO SELECTED PLAYER: OFF"
+    followButton.Text = "🎯  STICK TO SELECTED PLAYER"
     local character = Player.Character
     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
